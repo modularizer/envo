@@ -196,9 +196,11 @@ def parse_spec_key(k: str | re.Pattern) -> str | re.Pattern:
     """
     if isinstance(k, re.Pattern):
         k2 = k
-    elif re.match(r"[a-zA-Z_\-\d]+", k):
+    elif re.fullmatch(r"[a-zA-Z_\-\d]+", k):
+        # Simple identifier without wildcards - exact string match
         k2 = k
-    elif re.match(r"[a-zA-Z_\-\d\*]+", k):
+    elif re.fullmatch(r"[a-zA-Z_\-\d\*]+", k):
+        # Glob pattern with * - convert to regex
         k2 = re.compile(k.replace("*", ".*"))
     elif m := re.match(r'r?/(.*)/([imsxal]*)', k):
         pattern_text = m.group(1)
@@ -268,7 +270,13 @@ class EnvSpec(dict):
         return self.get(item, default=raise_error)
 
     def __getattr__(self, item):
-        return self.get(item, default=raise_error)
+        return self.get(item, default=raise_error) if item in self else None
+
+    def __repr__(self):
+        return f"EnvSpec<{str(dict(self))}>"
+
+    def __str__(self):
+        return str(dict(self))
 
     def list_groups(self) -> tuple[str, ...]:
         """
@@ -360,6 +368,86 @@ class EnvSpec(dict):
             return self[key].required
         except KeyError:
             return False
+
+    def _is_catchall_pattern(self, pattern: re.Pattern) -> bool:
+        """Check if a regex pattern is a catch-all (matches essentially anything)."""
+        # Common catch-all patterns that match any string
+        catchall_patterns = {
+            '.*',      # match all
+            '.+',      # match all non-empty
+            '.*$',     # match all
+            '^.*$',    # match all
+            '^.+$',    # match all non-empty
+            '[^]*',    # match all (weird but valid)
+            '.+$',     # match all non-empty
+        }
+        # Also check if it's effectively a catch-all (just anchors around .*)
+        normalized = pattern.pattern.strip('^$')
+        return pattern.pattern in catchall_patterns or normalized in ('.*', '.+')
+
+    def has_explicit_spec(self, key: str) -> bool:
+        """
+        Check if a key has an explicit spec (not just a catch-all fallback).
+        
+        Args:
+            key: The variable name to check.
+            
+        Returns:
+            True if the key matches an explicit spec entry (exact string match
+            or a non-catch-all pattern), False if it only matches a catch-all.
+            
+        Example:
+            >>> spec = parse_spec({"DB_HOST": str, "DB_*": str}, allow_extra="*")
+            >>> spec.has_explicit_spec("DB_HOST")  # exact match
+            True
+            >>> spec.has_explicit_spec("DB_PORT")  # matches DB_*
+            True
+            >>> spec.has_explicit_spec("RANDOM_VAR")  # only matches *
+            False
+        """
+        # Check for exact string match first
+        if key in dict.keys(self):
+            return True
+        
+        # Check pattern matches, excluding catch-alls
+        for k in self.keys():
+            if isinstance(k, re.Pattern):
+                if k.match(key) and not self._is_catchall_pattern(k):
+                    return True
+        
+        return False
+
+    def filter_explicit(self, keys: list[str]) -> list[str]:
+        """
+        Filter a list of keys to only those with explicit specs.
+        
+        Args:
+            keys: List of variable names to filter.
+            
+        Returns:
+            List of keys that have explicit specs (not just catch-all matches).
+            
+        Example:
+            >>> spec = parse_spec({"DB_HOST": str, "DB_*": str}, allow_extra="*")
+            >>> spec.filter_explicit(["DB_HOST", "DB_PORT", "RANDOM"])
+            ["DB_HOST", "DB_PORT"]
+        """
+        return [k for k in keys if self.has_explicit_spec(k)]
+
+    def list_explicit_keys(self) -> tuple[str, ...]:
+        """
+        List all explicitly defined keys (exact string matches only).
+        
+        Returns:
+            Tuple of variable names that are explicitly defined in the spec.
+            Does not include pattern-matched keys.
+            
+        Example:
+            >>> spec = parse_spec({"DB_HOST": str, "DB_*": str})
+            >>> spec.list_explicit_keys()
+            ('DB_HOST',)
+        """
+        return tuple(k for k in self.keys() if isinstance(k, str))
 
 
 

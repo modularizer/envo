@@ -23,7 +23,6 @@ classifiers = [
 ]
 
 [project.scripts]
-fpr = "envo.find_project_root:main"
 envo = "envo:main"
 
 [tool.setuptools.packages.find]
