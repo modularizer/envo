@@ -1,5 +1,7 @@
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+import inspect
+import json
 from pathlib import Path
 import re
 from typing import Literal, Any
@@ -7,6 +9,31 @@ from typing import Literal, Any
 from envo.coerce import coerce
 from envo.load import load_env_raw
 from fpr import find_project_root
+
+
+def is_pydantic_model(obj) -> bool:
+    """Check if obj is a Pydantic BaseModel subclass."""
+    if not inspect.isclass(obj):
+        return False
+    try:
+        from pydantic import BaseModel
+        return issubclass(obj, BaseModel)
+    except ImportError:
+        return False
+
+
+def pydantic_coercer(model_cls):
+    """Create a coercion function for a Pydantic model."""
+    def _coerce(s: str):
+        if not isinstance(s, str):
+            return model_cls.model_validate(s)
+        # Try to parse as JSON first
+        try:
+            data = json.loads(s)
+        except json.JSONDecodeError:
+            data = s
+        return model_cls.model_validate(data)
+    return _coerce
 
 
 
@@ -40,6 +67,8 @@ def apply_all_substitutions(env_dict: dict[str, str]) -> dict[str, str]:
 
 @dataclass
 class VariableSpec:
+    groups: Iterable[str] = ("unknown",)
+    docs: str = "No help available"
     type: str | type | None = None # passed into the coerce function, call be None to auto-detect
     pre: Callable[[str], str] | None = None # if specified, run pre-coercion
     coerce: bool | Callable[[str], Any] = True # if true, we use our coerce function, if false, we do not coerce at all, if a callable, we call it
@@ -51,24 +80,41 @@ class VariableSpec:
 unspecified = object()
 
 class Env:
-    def __init__(self, *env_paths: str | Literal["os.environ"] | Path,
-                 existing_env_priority: Literal["none", "highest", "lowest"] | None = None,
-                 cwd: str | Path | None ="find_project_root",
-                 spec: dict[str | re.Pattern, VariableSpec | dict | str | type] = None,
-                 default_variable_spec: VariableSpec | dict | str | type | None | Callable[[str], Any] = None,
-                 allow_extra: str | re.Pattern | bool = "*"
+    def __init__(self,
+                 *env_paths: str | Literal["os.environ"] | Path, # files, from lowest priority to highest
+                 raw: dict[str, str] | None = None,
+                 existing_env_priority: Literal["none", "highest", "lowest"] | None = "highest", # should we include variables already in os.environ, if so, at what priority, for a custom priority, put "os.environ" in the env_paths
+                 cwd: str | Path | None ="find_project_root", # the working directory to resolve env_paths relative to, default auto-detects project root
+                 spec: dict[str | re.Pattern, VariableSpec | dict | str | type] = None, # a spec of variables we are expecting
+                 default_variable_spec: VariableSpec | dict | str | type | None | Callable[[str], Any] = None, # how to parse keys not specified in the spec
+                 allow_extra: str | re.Pattern | bool = "*", # a pattern for which "extra" keys to accept, defaults to all
+                 docs: dict[str | re.Pattern, str] = None, # specify help strings
+                 defaults: dict[str | re.Pattern, str] = None,
+                 _groups: tuple | None = None,
+                 **spec_extra # alternate/additional way to specify the spec using kwargs
                  ):
         cwd = find_project_root() if cwd == "find_project_root" else cwd
         # Load and merge all env files, then apply substitutions
         raw_dict = load_env_raw(*env_paths,
                                 existing_env_priority=existing_env_priority,
-                                cwd=cwd)
-        self.raw = apply_all_substitutions(raw_dict)
+                                cwd=cwd) if raw is None else raw
+        self._parsed = {}
         self.default_variable_spec = VariableSpec()
+        self._groups = _groups or ()
+
+        self.raw = apply_all_substitutions(raw_dict)
         self.default_variable_spec = self.parse_variable_spec(default_variable_spec)
-        self.spec = self.parse_spec(spec if spec is not None else {})
+        self.spec = self.parse_spec({**(spec if spec is not None else {}), **spec_extra})
         if allow_extra:
             self.spec[self.parse_spec_key(allow_extra)] = self.default_variable_spec
+        if docs:
+            for k, v in docs.items():
+                self.spec[self.parse_spec_key(k)].docs = v
+        if defaults:
+            for k, v in defaults.items():
+                self.spec[self.parse_spec_key(k)].default = v
+
+        self._parsed = {k: self[k] for k in self.keys()}
 
     def parse_variable_spec(self, v: VariableSpec | dict | str | type | None | Callable[[str], Any]):
         if v is None:
@@ -77,6 +123,8 @@ class Env:
             v2 = v
         elif isinstance(v, dict):
             v2 = VariableSpec(**v)
+        elif is_pydantic_model(v):
+            v2 = VariableSpec(coerce=pydantic_coercer(v))
         elif isinstance(v, str | type):
             v2 = VariableSpec(type=v)
         elif isinstance(v, Callable):
@@ -84,7 +132,6 @@ class Env:
         else:
             raise ValueError(f"Unknown spec: {v}")
         return v2
-
 
     def parse_spec_key(self, k: str | re.Pattern) -> str | re.Pattern:
         if isinstance(k, re.Pattern):
@@ -140,8 +187,14 @@ class Env:
         return iter(self.raw)
 
     def get(self, key, default: Any = unspecified, type: str | type | None = unspecified) -> Any:
+        if default is not unspecified or type is not unspecified or key not in self._parsed:
+            spec = self.get_spec(key)
+            s = self.raw.get(key, spec.default if default is unspecified else default)
+            return self.parse_value(key, s, type=type)
+        return self._parsed[key]
+
+    def parse_value(self, key, s: str, type: str | type | None = unspecified) -> Any:
         spec = self.get_spec(key)
-        s = self.raw.get(key, spec.default if default is unspecified else default)
         t = spec.type if type is unspecified else type
         if spec.pre:
             s = spec.pre(s)
@@ -157,9 +210,15 @@ class Env:
     def get_as(self, key: str, type, default=None):
         return self.get(key, default=default, type=type)
 
+    def get_group(self, *groups: str):
+        keys = [k for k in self.spec if isinstance(k, str) and all(group in self.spec[k].groups for group in groups)]
+        raw = {k: self.raw[k] for k in keys if k in self.raw}
+        return Env(raw=raw, spec=self.spec, allow_extra = False, _groups=tuple({*self._groups, *groups}))
+
+
     @property
     def parsed(self):
-        return {k: self[k] for k in self.keys()}
+        return self._parsed
 
     def __getitem__(self, item):
         return self.get(item)
@@ -179,7 +238,28 @@ class Env:
     def __iter__(self):
         return iter(self.parsed)
 
+    def __repr__(self):
+        g = f"({','.join(self._groups)})" if self._groups else ""
+        return f"Env{g}<{self.parsed!r}>"
+
+    def __str__(self):
+        return str(self.parsed)
+
+    @property
+    def group(self):
+        return self.group
+
+    def __call__(self, *groups):
+        return self.get_group(*groups)
+
+    def list_groups(self):
+        return tuple(set(g for v in self.spec.values() for g in v.groups))
+
+    @property
+    def groups(self):
+        return {g: self(g) for g in self.list_groups()}
 
 
 
+# make a default env
 env = Env()

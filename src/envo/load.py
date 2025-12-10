@@ -8,7 +8,7 @@ from typing import Literal
 
 
 def load_env_raw(*env_paths: str | Literal["os.environ"] | Path,
-                 existing_env_priority: Literal["none", "highest", "lowest"] | None = None,
+                 existing_env_priority: Literal["none", "highest", "lowest"] | None = "highest",
                  cwd = None) -> dict[str, str]:
     """
     Load environment variables from one or more locations, lowest priority to highest priority.
@@ -20,10 +20,11 @@ def load_env_raw(*env_paths: str | Literal["os.environ"] | Path,
     """
     if not env_paths:
         env_paths = (".env",)
-    if existing_env_priority == "highest":
-        env_paths = (*env_paths, "os.environ")
-    if existing_env_priority == "lowest":
-        env_paths = ("os.environ", *env_paths)
+    if "os.environ" not in env_paths:
+        if existing_env_priority == "highest":
+            env_paths = (*env_paths, "os.environ")
+        if existing_env_priority == "lowest":
+            env_paths = ("os.environ", *env_paths)
     env = {}
     for p in env_paths:
         env.update(load_single_env_raw(p, cwd=cwd))
