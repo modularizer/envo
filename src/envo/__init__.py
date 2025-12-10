@@ -12,8 +12,18 @@ Command-line arguments are parsed after env loading, so they have highest priori
 """
 import argparse
 
-from .env import env
+from .env import env, Env, USE_SPEC_DEFAULT
+from .load import ENVO_EXTENDS, ENVO_EXTENDED_BY
 from .coerce import *
+from .parse_spec import (
+    env_file_to_spec,
+    env_file_to_defaults,
+    env_file_to_docs,
+    parse_env_file,
+    ParsedVariable,
+    ParsedGroup,
+    print_spec_summary,
+)
 
 
 def main():

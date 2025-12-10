@@ -146,12 +146,19 @@ def coerce_glob(pattern: str, project_root: str | Path | None = None) -> str:
     return pattern
 
 
-def coerce_unknown(s: str, **kwargs):
+def coerce_unknown(s: str | None, **kwargs):
+    # None stays None
+    if s is None:
+        return None
     if not isinstance(s, str):
         return s
     try:
-        if s.lower() in ["", "null", "none"]:
+        # Only "null" and "none" literals become None, empty string stays empty
+        if s.lower() in ["null", "none"]:
             return None
+        # Empty string stays as empty string
+        if s == "":
+            return ""
         if s.lower() in ["true", "false", "yes", "no", "y", "n", "on", "off", "enabled", "enable", "disabled", "disable"]:
             return coerce_bool(s, **kwargs)
         if s.replace("_","").isdigit() or (s.startswith('-') and s[1:].replace("_","").isdigit()):
@@ -170,10 +177,14 @@ def coerce_unknown(s: str, **kwargs):
         return s
 
 
-def coerce(s: str, t = None, **kwargs) -> str | float | int | bool | None | Path | dict:
+def coerce(s: str | None, t = None, **kwargs) -> str | float | int | bool | None | Path | dict:
+    # None stays None
+    if s is None:
+        return None
     if not isinstance(s, str):
         return s
-    if s.lower() in ["", "null", "none"]:
+    # Only "null" and "none" literals become None, empty string stays empty
+    if s.lower() in ["null", "none"]:
         return None
     if t is None:
         return coerce_unknown(s, **kwargs)

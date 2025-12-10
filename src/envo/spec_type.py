@@ -94,12 +94,14 @@ class VariableSpec:
         validator: Optional validator called on the final value (after post).
             Should raise an exception if validation fails.
         default: Default value to use if the variable is not set.
+        required: If True, the variable must have a non-empty value.
 
     Example:
         >>> spec = VariableSpec(
         ...     groups=("database",),
         ...     docs="Database connection port",
         ...     type=int,
+        ...     required=True,
         ...     validator=lambda x: x if 1 <= x <= 65535 else (_ for _ in ()).throw(ValueError("Invalid port"))
         ... )
     """
@@ -113,6 +115,7 @@ class VariableSpec:
     raw_validator: Callable[[str], Any] | None = None
     validator: Callable[[Any], Any] | None = None
     default: str = None
+    required: bool = False
 
 VariableSpecInput = VariableSpec | dict | str | type | None | Callable[[str], Any]
 
@@ -252,7 +255,7 @@ class EnvSpec(dict):
             VariableSpec(groups=("database",), ...)
         """
         if key in self:
-            return self[key]
+            return super().__getitem__(key)
         else:
             for k, v in self.items():
                 if isinstance(k, re.Pattern) and k.match(key):
@@ -298,6 +301,65 @@ class EnvSpec(dict):
         Dictionary of all groups, each mapped to a filtered EnvSpec.
         """
         return {g: self(g) for g in self.list_groups()}
+
+    def get_required(self) -> "EnvSpec":
+        """
+        Get a filtered EnvSpec containing only required variables.
+        
+        Returns:
+            EnvSpec with only variables where required=True.
+            
+        Example:
+            >>> required = spec.get_required()
+            >>> list(required.keys())
+            ['DB_HOST', 'API_KEY']
+        """
+        return EnvSpec({k: v for k, v in self.items() if isinstance(k, str) and v.required})
+
+    @property
+    def required(self) -> "EnvSpec":
+        """
+        Property shorthand for get_required().
+        
+        Example:
+            >>> spec.required
+            EnvSpec({'DB_HOST': VariableSpec(...), 'API_KEY': VariableSpec(...)})
+        """
+        return self.get_required()
+
+    def list_required(self) -> tuple[str, ...]:
+        """
+        List all required variable names.
+        
+        Returns:
+            Tuple of variable names that are marked as required.
+            
+        Example:
+            >>> spec.list_required()
+            ('DB_HOST', 'API_KEY')
+        """
+        return tuple(k for k, v in self.items() if isinstance(k, str) and v.required)
+
+    def is_required(self, key: str) -> bool:
+        """
+        Check if a specific variable is required.
+        
+        Args:
+            key: The variable name to check.
+            
+        Returns:
+            True if the variable is required, False otherwise.
+            
+        Example:
+            >>> spec.is_required('DB_HOST')
+            True
+            >>> spec.is_required('DEBUG')
+            False
+        """
+        try:
+            return self[key].required
+        except KeyError:
+            return False
 
 
 

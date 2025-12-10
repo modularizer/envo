@@ -26,8 +26,11 @@ from fpr import find_project_root
 from envo.sentinel import unspecified
 from envo.spec_type import parse_variable_spec, VariableSpecInput, VariableSpec, parse_spec_key, parse_spec
 
+# Special value that indicates "use the default from spec"
+USE_SPEC_DEFAULT = "<default>"
 
-def apply_all_substitutions(env_dict: dict[str, str]) -> dict[str, str]:
+
+def apply_all_substitutions(env_dict: dict[str, str | None]) -> dict[str, str | None]:
     """
     Apply all substitutions to a dictionary of environment variables.
 
@@ -36,9 +39,10 @@ def apply_all_substitutions(env_dict: dict[str, str]) -> dict[str, str]:
     2. $VAR_NAME -> environment variable references
 
     This is called AFTER all files are loaded and merged, so all values are available.
+    None values are preserved (not substituted).
 
     Args:
-        env_dict: Dictionary of environment variables (raw strings)
+        env_dict: Dictionary of environment variables (raw strings or None)
 
     Returns:
         Dictionary with all substitutions applied
@@ -48,6 +52,9 @@ def apply_all_substitutions(env_dict: dict[str, str]) -> dict[str, str]:
 
     # Step 1: Substitute % with project root
     for key, value in result.items():
+        # Skip None values
+        if value is None:
+            continue
         if '%' in value:
             result[key] = value.replace("%", str(Path(project_root or Path.cwd()).expanduser().resolve()))
     return result
@@ -178,6 +185,8 @@ class Env(dict):
 
         Retrieves and parses an environment variable. If already parsed and no
         overrides are specified, returns the cached value.
+        
+        Special value "<default>" in the raw value will use the spec's default.
 
         Args:
             key: The variable name to retrieve.
@@ -205,6 +214,9 @@ class Env(dict):
         if default is not unspecified or type is not unspecified or key not in self._parsed:
             spec = self.spec[key]
             s = self.raw.get(key, spec.default if default is unspecified else default)
+            # Handle <default> special value - use spec's default
+            if s == USE_SPEC_DEFAULT:
+                s = spec.default
             return self.parse_value(key, s, type=type)
         return self._parsed[key]
 
