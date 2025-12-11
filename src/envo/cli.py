@@ -15,26 +15,7 @@ from termite import subprint
 from envo.env import Env, find_default_spec, find_default_env
 from envo.load import load_env_raw
 from envo.parse_spec import env_file_to_spec
-from envo.consts import (
-    USE_SPEC_DEFAULT,
-    ENVO_SPECIAL_KEYS,
-    DEFAULT_DOCS,
-    KEY_STATUS_DEFAULT,
-    KEY_STATUS_VALID,
-    KEY_STATUS_INVALID,
-    KEY_STATUS_EXTRA,
-    KEY_COLOR_DEFAULT,
-    KEY_COLOR_VALID,
-    KEY_COLOR_INVALID,
-    KEY_COLOR_EXTRA,
-    KEY_COLOR_DEFAULT_VALUE,
-    VALUE_COLOR_DIM,
-    VALUE_COLOR_GREEN,
-    VALUE_COLOR_RED,
-    VALUE_COLOR_YELLOW,
-    VALUE_COLOR_BLUE,
-    VALUE_COLOR_WHITE,
-)
+import envo.consts as consts
 
 
 def _escape_brackets(text: str) -> str:
@@ -45,39 +26,42 @@ def _escape_brackets(text: str) -> str:
 def _get_value_style(value) -> str:
     """Get the appropriate style name for a value based on its type."""
     if value is None:
-        return f"rgb[{VALUE_COLOR_DIM}]"
+        return f"rgb[{consts.VALUE_COLOR_DIM}]"
     if isinstance(value, bool):
-        color = VALUE_COLOR_GREEN if value else VALUE_COLOR_RED
+        color = consts.VALUE_COLOR_GREEN if value else consts.VALUE_COLOR_RED
         return f"rgb[{color}]"
     if isinstance(value, (int, float)):
-        return f"rgb[{VALUE_COLOR_YELLOW}]"
+        return f"rgb[{consts.VALUE_COLOR_YELLOW}]"
     if isinstance(value, str):
         if '/' in value or value.startswith('~'):
-            return f"rgb[{VALUE_COLOR_BLUE}]"
+            return f"rgb[{consts.VALUE_COLOR_BLUE}]"
     # For white/default, use termite's WHITE style
     return "WHITE"
 
 
 def _get_key_style(status: str) -> str:
     """Get the style for a key based on its status."""
-    if status == KEY_STATUS_DEFAULT:
-        return f"rgb[{KEY_COLOR_DEFAULT}]"
-    elif status == KEY_STATUS_VALID:
-        return f"BOLD+rgb[{KEY_COLOR_VALID}]"
-    elif status == KEY_STATUS_INVALID:
-        return f"BOLD+rgb[{KEY_COLOR_INVALID}]"
-    elif status == KEY_STATUS_EXTRA:
-        return f"rgb[{KEY_COLOR_EXTRA}]"
+    if status == consts.KEY_STATUS_DEFAULT:
+        return f"rgb[{consts.KEY_COLOR_DEFAULT}]"
+    elif status == consts.KEY_STATUS_VALID:
+        return f"BOLD+rgb[{consts.KEY_COLOR_VALID}]"
+    elif status == consts.KEY_STATUS_INVALID:
+        return f"BOLD+rgb[{consts.KEY_COLOR_INVALID}]"
+    elif status == consts.KEY_STATUS_EXTRA:
+        return f"rgb[{consts.KEY_COLOR_EXTRA}]"
     else:
-        return f"BOLD+rgb[{KEY_COLOR_DEFAULT_VALUE}]"
+        return f"BOLD+rgb[{consts.KEY_COLOR_DEFAULT_VALUE}]"
 
 
 def print_key_value(key: str, value, export: bool = False, value_only: bool = False, 
-                    docs: str = None, key_status: str = KEY_STATUS_VALID, no_color: bool = False):
+                    docs: str = None, key_status: str = None, no_color: bool = False):
     """Print a key-value pair with optional colors."""
+    if key_status is None:
+        key_status = consts.KEY_STATUS_VALID
+    
     # Build docs suffix
     docs_text = ""
-    if docs and docs != DEFAULT_DOCS:
+    if docs and docs != consts.DEFAULT_DOCS:
         docs_text = f"  # {docs}"
     
     if no_color:
@@ -105,7 +89,7 @@ def print_key_value(key: str, value, export: bool = False, value_only: bool = Fa
     
     # Build colored docs suffix
     docs_suffix = ""
-    if docs and docs != DEFAULT_DOCS:
+    if docs and docs != consts.DEFAULT_DOCS:
         escaped_docs = _escape_brackets(docs)
         docs_suffix = f" DIM[# {escaped_docs}]"
     
@@ -275,17 +259,17 @@ def cmd_show(args):
         value = env.get(key)
         
         # Determine key status
-        key_status = KEY_STATUS_VALID
+        key_status = consts.KEY_STATUS_VALID
         
         # Check if key has explicit spec (use original spec with validators)
         has_explicit = spec and spec.has_explicit_spec(key) if spec else False
         
         if not has_explicit:
             # Extra key not in spec
-            key_status = KEY_STATUS_EXTRA
+            key_status = consts.KEY_STATUS_EXTRA
         elif key not in raw_from_file or raw_from_file.get(key) is None:
             # Value came from spec default (not in file or was empty)
-            key_status = KEY_STATUS_DEFAULT
+            key_status = consts.KEY_STATUS_DEFAULT
         else:
             # Value was specified - check if it's valid using original spec
             try:
@@ -293,9 +277,9 @@ def cmd_show(args):
                     var_spec = spec[key]
                     if var_spec.validator:
                         var_spec.validator(value)
-                key_status = KEY_STATUS_VALID
+                key_status = consts.KEY_STATUS_VALID
             except Exception:
-                key_status = KEY_STATUS_INVALID
+                key_status = consts.KEY_STATUS_INVALID
         
         # Get docs if requested
         docs_text = None
@@ -400,7 +384,7 @@ def cmd_validate(args):
     # Check each value in the env file
     for key, raw_value in raw_values.items():
         # Skip special ENVO keys
-        if key in ENVO_SPECIAL_KEYS:
+        if key in consts.ENVO_SPECIAL_KEYS:
             continue
         
         # Check if key is in spec
@@ -418,7 +402,7 @@ def cmd_validate(args):
             continue
         
         # Skip <default> values - they'll use spec defaults
-        if raw_value == USE_SPEC_DEFAULT:
+        if raw_value == consts.USE_SPEC_DEFAULT:
             continue
         
         # Skip None/empty values for non-required vars

@@ -2,10 +2,10 @@ import inspect
 import json
 import re
 from collections.abc import Iterable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
-from envo.consts import DEFAULT_GROUP, DEFAULT_DOCS
+import envo.consts as consts
 
 
 def is_pydantic_model(obj) -> bool:
@@ -108,8 +108,8 @@ class VariableSpec:
         ... )
     """
 
-    groups: Iterable[str] = (DEFAULT_GROUP,)
-    docs: str = DEFAULT_DOCS
+    groups: Iterable[str] = field(default_factory=lambda: (consts.DEFAULT_GROUP,))
+    docs: str = field(default_factory=lambda: consts.DEFAULT_DOCS)
     type: str | type | None = None
     pre: Callable[[str], str] | None = None
     coerce: bool | Callable[[str], Any] = True

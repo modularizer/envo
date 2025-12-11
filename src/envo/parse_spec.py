@@ -73,7 +73,7 @@ from typing import Any, Callable
 from fpr import find_project_root
 
 from envo.spec_type import VariableSpec, EnvSpec
-from envo.consts import DEFAULT_GROUP, DEFAULT_DOCS
+import envo.consts as consts
 
 
 def _load_yaml(path: Path) -> dict:
@@ -110,7 +110,7 @@ class ParsedVariable:
     name: str
     value: str | None  # default value: None means unset, "" means explicit empty string
     help_text: str = ""
-    groups: tuple[str, ...] = (DEFAULT_GROUP,)
+    groups: tuple[str, ...] = (consts.DEFAULT_GROUP,)
     type_hint: str | type | None = None
     min_val: float | None = None
     max_val: float | None = None
@@ -269,7 +269,7 @@ def build_validator(parsed: ParsedVariable) -> Callable[[Any], Any] | None:
 
 def parse_env_file(
     path: str | Path,
-    default_group: str = DEFAULT_GROUP,
+    default_group: str = None,
 ) -> tuple[list[ParsedVariable], list[ParsedGroup]]:
     """
     Parse an env file into structured data.
@@ -281,6 +281,9 @@ def parse_env_file(
     Returns:
         Tuple of (list of ParsedVariable, list of ParsedGroup)
     """
+    if default_group is None:
+        default_group = consts.DEFAULT_GROUP
+    
     path = Path(path).expanduser()
     if not path.exists():
         return [], []
@@ -511,7 +514,7 @@ def parsed_to_variable_spec(parsed: ParsedVariable) -> VariableSpec:
     
     return VariableSpec(
         groups=parsed.groups,
-        docs=parsed.help_text or DEFAULT_DOCS,
+        docs=parsed.help_text or consts.DEFAULT_DOCS,
         type=inferred_type,
         default=parsed.value,  # None means unset, "" means explicit empty
         required=parsed.required,
@@ -519,7 +522,7 @@ def parsed_to_variable_spec(parsed: ParsedVariable) -> VariableSpec:
     )
 
 
-def _parse_structured_spec(data: dict, default_group: str = DEFAULT_GROUP) -> list[ParsedVariable]:
+def _parse_structured_spec(data: dict, default_group: str = None) -> list[ParsedVariable]:
     """
     Parse a structured dictionary (from JSON/YAML/TOML) into ParsedVariable list.
     
@@ -535,6 +538,9 @@ def _parse_structured_spec(data: dict, default_group: str = DEFAULT_GROUP) -> li
     Returns:
         List of ParsedVariable instances
     """
+    if default_group is None:
+        default_group = consts.DEFAULT_GROUP
+    
     variables = []
     
     for key, value in data.items():
@@ -665,7 +671,7 @@ def _convert_to_string(value: Any) -> str | None:
 
 def env_file_to_spec(
     path: str | Path,
-    default_group: str = DEFAULT_GROUP,
+    default_group: str = None,
     cwd: str | Path | None = "find_project_root",
 ) -> EnvSpec:
     """
@@ -691,6 +697,9 @@ def env_file_to_spec(
         >>> spec.DB_HOST
         VariableSpec(groups=('database',), ...)
     """
+    if default_group is None:
+        default_group = consts.DEFAULT_GROUP
+    
     cwd = find_project_root() if cwd == "find_project_root" else cwd
     path = Path(path).expanduser()
     if not path.is_absolute():
@@ -783,7 +792,7 @@ def print_spec_summary(spec: EnvSpec) -> None:
                     type_str = f" ({var_spec.type})"
             default_str = f" = {var_spec.default!r}" if var_spec.default else ""
             print(f"  {name}{type_str}{default_str}")
-            if var_spec.docs and var_spec.docs != DEFAULT_DOCS:
+            if var_spec.docs and var_spec.docs != consts.DEFAULT_DOCS:
                 print(f"    {var_spec.docs}")
 
 

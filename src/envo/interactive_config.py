@@ -18,57 +18,7 @@ from envo.load import load_single_env_raw, resolve_var_references
 from envo.coerce import coerce
 from envo.parse_spec import env_file_to_spec
 from envo.cli import _escape_brackets
-from envo.consts import (
-    # Special keys
-    ENVO_SPECIAL_KEYS,
-    # Default file
-    DEFAULT_ENV_FILE,
-    # Key status
-    KEY_STATUS_DEFAULT,
-    KEY_STATUS_VALID,
-    KEY_STATUS_INVALID,
-    KEY_STATUS_EXTRA,
-    # Key colors
-    KEY_COLOR_DEFAULT,
-    KEY_COLOR_VALID,
-    KEY_COLOR_INVALID,
-    KEY_COLOR_EXTRA,
-    KEY_COLOR_DEFAULT_VALUE,
-    # Value colors
-    VALUE_COLOR_DIM,
-    VALUE_COLOR_GREEN,
-    VALUE_COLOR_RED,
-    VALUE_COLOR_YELLOW,
-    VALUE_COLOR_BLUE,
-    VALUE_COLOR_WHITE,
-    # UI colors
-    HIGHLIGHT_BG_COLOR,
-    HIGHLIGHT_TEXT_COLOR_DIM,
-    UI_TEXT_DIM,
-    # Highlight colors
-    KEY_COLOR_DEFAULT_HIGHLIGHT,
-    KEY_COLOR_VALID_HIGHLIGHT,
-    KEY_COLOR_INVALID_HIGHLIGHT,
-    KEY_COLOR_EXTRA_HIGHLIGHT,
-    KEY_COLOR_DEFAULT_VALUE_HIGHLIGHT,
-    VALUE_COLOR_DIM_HIGHLIGHT,
-    VALUE_COLOR_GREEN_HIGHLIGHT,
-    VALUE_COLOR_RED_HIGHLIGHT,
-    VALUE_COLOR_YELLOW_HIGHLIGHT,
-    VALUE_COLOR_BLUE_HIGHLIGHT,
-    VALUE_COLOR_WHITE_HIGHLIGHT,
-    # UI text
-    UI_SEPARATOR_CHAR,
-    UI_SEPARATOR_WIDTH,
-    UI_HELP_BROWSE,
-    UI_HELP_EDIT,
-    UI_NOT_SET,
-    UI_VALID_PREFIX,
-    UI_INVALID_PREFIX,
-    UI_CHANGE_ARROW,
-    # Default docs
-    DEFAULT_DOCS,
-)
+import envo.consts as consts
 
 from prompt_toolkit import Application
 from prompt_toolkit.key_binding import KeyBindings
@@ -86,61 +36,61 @@ from prompt_toolkit.formatted_text import FormattedText
 def _get_key_style(status: str, highlighted: bool = False) -> str:
     """Get the style for a key based on its status - matches envo show termite colors."""
     if highlighted:
-        if status == KEY_STATUS_DEFAULT:
-            return KEY_COLOR_DEFAULT_HIGHLIGHT
-        elif status == KEY_STATUS_VALID:
-            return f"{KEY_COLOR_VALID_HIGHLIGHT} bold"
-        elif status == KEY_STATUS_INVALID:
-            return f"{KEY_COLOR_INVALID_HIGHLIGHT} bold"
-        elif status == KEY_STATUS_EXTRA:
-            return KEY_COLOR_EXTRA_HIGHLIGHT
+        if status == consts.KEY_STATUS_DEFAULT:
+            return consts.KEY_COLOR_DEFAULT_HIGHLIGHT
+        elif status == consts.KEY_STATUS_VALID:
+            return f"{consts.KEY_COLOR_VALID_HIGHLIGHT} bold"
+        elif status == consts.KEY_STATUS_INVALID:
+            return f"{consts.KEY_COLOR_INVALID_HIGHLIGHT} bold"
+        elif status == consts.KEY_STATUS_EXTRA:
+            return consts.KEY_COLOR_EXTRA_HIGHLIGHT
         else:
-            return f"{KEY_COLOR_DEFAULT_VALUE_HIGHLIGHT} bold"
+            return f"{consts.KEY_COLOR_DEFAULT_VALUE_HIGHLIGHT} bold"
     else:
-        if status == KEY_STATUS_DEFAULT:
-            return KEY_COLOR_DEFAULT
-        elif status == KEY_STATUS_VALID:
-            return f"{KEY_COLOR_VALID} bold"
-        elif status == KEY_STATUS_INVALID:
-            return f"{KEY_COLOR_INVALID} bold"
-        elif status == KEY_STATUS_EXTRA:
-            return KEY_COLOR_EXTRA
+        if status == consts.KEY_STATUS_DEFAULT:
+            return consts.KEY_COLOR_DEFAULT
+        elif status == consts.KEY_STATUS_VALID:
+            return f"{consts.KEY_COLOR_VALID} bold"
+        elif status == consts.KEY_STATUS_INVALID:
+            return f"{consts.KEY_COLOR_INVALID} bold"
+        elif status == consts.KEY_STATUS_EXTRA:
+            return consts.KEY_COLOR_EXTRA
         else:
-            return f"{KEY_COLOR_DEFAULT_VALUE} bold"
+            return f"{consts.KEY_COLOR_DEFAULT_VALUE} bold"
 
 
 def _get_value_style(value, highlighted: bool = False) -> str:
     """Get the appropriate style name for a value based on its type - matches envo show termite colors."""
     if highlighted:
         if value is None:
-            return VALUE_COLOR_DIM_HIGHLIGHT
+            return consts.VALUE_COLOR_DIM_HIGHLIGHT
         if isinstance(value, bool):
-            return VALUE_COLOR_GREEN_HIGHLIGHT if value else VALUE_COLOR_RED_HIGHLIGHT
+            return consts.VALUE_COLOR_GREEN_HIGHLIGHT if value else consts.VALUE_COLOR_RED_HIGHLIGHT
         if isinstance(value, (int, float)):
-            return VALUE_COLOR_YELLOW_HIGHLIGHT
+            return consts.VALUE_COLOR_YELLOW_HIGHLIGHT
         if isinstance(value, str):
             if '/' in value or value.startswith('~'):
-                return VALUE_COLOR_BLUE_HIGHLIGHT
-        return VALUE_COLOR_WHITE_HIGHLIGHT
+                return consts.VALUE_COLOR_BLUE_HIGHLIGHT
+        return consts.VALUE_COLOR_WHITE_HIGHLIGHT
     else:
         if value is None:
-            return VALUE_COLOR_DIM
+            return consts.VALUE_COLOR_DIM
         if isinstance(value, bool):
-            return VALUE_COLOR_GREEN if value else VALUE_COLOR_RED
+            return consts.VALUE_COLOR_GREEN if value else consts.VALUE_COLOR_RED
         if isinstance(value, (int, float)):
-            return VALUE_COLOR_YELLOW
+            return consts.VALUE_COLOR_YELLOW
         if isinstance(value, str):
             if '/' in value or value.startswith('~'):
-                return VALUE_COLOR_BLUE
+                return consts.VALUE_COLOR_BLUE
         # For white/default, return empty string (no special color)
-        return VALUE_COLOR_WHITE if VALUE_COLOR_WHITE else ""
+        return consts.VALUE_COLOR_WHITE if consts.VALUE_COLOR_WHITE else ""
 
 
 def format_variable_line(key: str, value, key_status: str, selected: bool = False, has_unsaved_changes: bool = False, saved_value=None) -> "FormattedText":
     """Format a variable line for display in the list - matches envo show colors."""
     escaped_key = _escape_brackets(key)
     escaped_value = _escape_brackets(str(value)) if value is not None else ""
-    escaped_saved_value = _escape_brackets(str(saved_value)) if saved_value is not None else UI_NOT_SET
+    escaped_saved_value = _escape_brackets(str(saved_value)) if saved_value is not None else consts.UI_NOT_SET
     
     key_style = _get_key_style(key_status, highlighted=selected)
     value_style = _get_value_style(value, highlighted=selected)
@@ -154,41 +104,41 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
         parts = []
         # Add asterisk for unsaved changes
         if has_unsaved_changes:
-            parts.append((f"bg:{HIGHLIGHT_BG_COLOR} bold", "*"))
+            parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR} bold", "*"))
         else:
-            parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", " "))
+            parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR}", " "))
         # Key with style (using highlight-specific colors)
         if key_style:
-            parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}{key_style}", escaped_key))
+            parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR} {italic_prefix}{key_style}", escaped_key))
         else:
-            parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}bold", escaped_key))
-        parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}", " = "))
+            parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR} {italic_prefix}bold", escaped_key))
+        parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR} {italic_prefix}", " = "))
         # Value display - show saved value in strikethrough if unsaved changes
         if has_unsaved_changes:
             # Show saved value in strikethrough using prompt_toolkit's strike style
-            strike_style = f"bg:{HIGHLIGHT_BG_COLOR} strike"
+            strike_style = f"bg:{consts.HIGHLIGHT_BG_COLOR} strike"
             if saved_value_style:
-                strike_style = f"bg:{HIGHLIGHT_BG_COLOR} strike {saved_value_style}"
+                strike_style = f"bg:{consts.HIGHLIGHT_BG_COLOR} strike {saved_value_style}"
             parts.append((strike_style, escaped_saved_value))
-            parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", UI_CHANGE_ARROW))
+            parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR}", consts.UI_CHANGE_ARROW))
             # Show new value
             if value is not None:
                 if value_style:
-                    parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}{value_style}", escaped_value))
+                    parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR} {italic_prefix}{value_style}", escaped_value))
                 else:
-                    parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}", escaped_value))
+                    parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR} {italic_prefix}", escaped_value))
             else:
-                parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}{HIGHLIGHT_TEXT_COLOR_DIM}", UI_NOT_SET))
+                parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR} {italic_prefix}{consts.HIGHLIGHT_TEXT_COLOR_DIM}", consts.UI_NOT_SET))
         else:
             # Normal value display
             if value is not None:
                 if value_style:
-                    parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {value_style}", escaped_value))
+                    parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR} {value_style}", escaped_value))
                 else:
-                    parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", escaped_value))
+                    parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR}", escaped_value))
             else:
-                parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {HIGHLIGHT_TEXT_COLOR_DIM}", UI_NOT_SET))
-        parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", " "))
+                parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR} {consts.HIGHLIGHT_TEXT_COLOR_DIM}", consts.UI_NOT_SET))
+        parts.append((f"bg:{consts.HIGHLIGHT_BG_COLOR}", " "))
     else:
         # Normal item - use same colors as envo show
         parts = []
@@ -211,7 +161,7 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
             if saved_value_style:
                 strike_style = f"strike {saved_value_style}"
             parts.append((strike_style, escaped_saved_value))
-            parts.append(("", UI_CHANGE_ARROW))
+            parts.append(("", consts.UI_CHANGE_ARROW))
             # Show new value
             if value is not None:
                 if value_style:
@@ -219,7 +169,7 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
                 else:
                     parts.append((f"{italic_prefix}", escaped_value))
             else:
-                parts.append((f"{italic_prefix}", UI_NOT_SET))
+                parts.append((f"{italic_prefix}", consts.UI_NOT_SET))
         else:
             # Normal value display
             if value is not None:
@@ -228,7 +178,7 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
                 else:
                     parts.append(("", escaped_value))  # WHITE - default
             else:
-                parts.append(("", UI_NOT_SET))  # DIM - no special color
+                parts.append(("", consts.UI_NOT_SET))  # DIM - no special color
     
     return parts
 
@@ -238,20 +188,20 @@ def format_variable_detail(key: str, var_spec, current_value, raw_from_file: dic
     parts = []
     
     if not key:
-        return [(UI_TEXT_DIM, "Select a variable to view details")]  # Could also be a const if needed
+        return [(consts.UI_TEXT_DIM, "Select a variable to view details")]  # Could also be a const if needed
     
     # Line 1: Key and docs on same line
     escaped_key = _escape_brackets(key)
     parts.append(("bold", escaped_key))
-    docs = var_spec.docs if var_spec and var_spec.docs != DEFAULT_DOCS else None
+    docs = var_spec.docs if var_spec and var_spec.docs != consts.DEFAULT_DOCS else None
     if docs:
         escaped_docs = _escape_brackets(docs)
-        parts.append((UI_TEXT_DIM, f"  {escaped_docs}"))
+        parts.append((consts.UI_TEXT_DIM, f"  {escaped_docs}"))
     parts.append(("", "\n"))
     
     # Line 2: Type, Current, Default
     var_type = var_spec.type if var_spec else None
-    current_str = str(current_value) if current_value is not None else UI_NOT_SET
+    current_str = str(current_value) if current_value is not None else consts.UI_NOT_SET
     default = var_spec.default if var_spec else None
     
     line2_parts = []
@@ -262,16 +212,16 @@ def format_variable_detail(key: str, var_spec, current_value, raw_from_file: dic
     if default is not None:
         line2_parts.append(f"default:{default}")
     
-    parts.append((UI_TEXT_DIM, "  ".join(line2_parts)))
+    parts.append((consts.UI_TEXT_DIM, "  ".join(line2_parts)))
     parts.append(("", "\n"))
     
     # Line 3: Status, Required, Validated
-    key_status = KEY_STATUS_VALID
+    key_status = consts.KEY_STATUS_VALID
     has_explicit = spec and spec.has_explicit_spec(key) if spec else False
     if not has_explicit:
-        key_status = KEY_STATUS_EXTRA
+        key_status = consts.KEY_STATUS_EXTRA
     elif key not in raw_from_file or raw_from_file.get(key) is None:
-        key_status = KEY_STATUS_DEFAULT
+        key_status = consts.KEY_STATUS_DEFAULT
     else:
         try:
             if spec:
@@ -281,9 +231,9 @@ def format_variable_detail(key: str, var_spec, current_value, raw_from_file: dic
                         var_spec_check.validator(current_value)
                 except KeyError:
                     pass
-            key_status = KEY_STATUS_VALID
+            key_status = consts.KEY_STATUS_VALID
         except Exception:
-            key_status = KEY_STATUS_INVALID
+            key_status = consts.KEY_STATUS_INVALID
     
     line3_parts = []
     required = var_spec.required if var_spec else False
@@ -292,17 +242,17 @@ def format_variable_detail(key: str, var_spec, current_value, raw_from_file: dic
     has_validator = var_spec and var_spec.validator
     if has_validator:
         line3_parts.append("validated")
-    if key_status != KEY_STATUS_VALID:
+    if key_status != consts.KEY_STATUS_VALID:
         status_text = {
-            KEY_STATUS_DEFAULT: "using-default",
-            KEY_STATUS_INVALID: "invalid",
-            KEY_STATUS_EXTRA: "extra",
+            consts.KEY_STATUS_DEFAULT: "using-default",
+            consts.KEY_STATUS_INVALID: "invalid",
+            consts.KEY_STATUS_EXTRA: "extra",
         }.get(key_status, "")
         if status_text:
             line3_parts.append(status_text)
     
     if line3_parts:
-        parts.append((UI_TEXT_DIM, "  ".join(line3_parts)))
+        parts.append((consts.UI_TEXT_DIM, "  ".join(line3_parts)))
     
     return parts
 
@@ -322,7 +272,7 @@ def save_env_file(env_data: dict[str, str | None], dst_path: Path, spec_path: Op
         match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)(?:\s*#.*)?$', line)
         if match:
             key = match.group(1)
-            if key not in ENVO_SPECIAL_KEYS:
+            if key not in consts.ENVO_SPECIAL_KEYS:
                 key_to_line[key] = i
     
     # Track which keys we've processed
@@ -330,7 +280,7 @@ def save_env_file(env_data: dict[str, str | None], dst_path: Path, spec_path: Op
     
     # Update existing lines
     for key, value in sorted(env_data.items()):
-        if key in ENVO_SPECIAL_KEYS:
+        if key in consts.ENVO_SPECIAL_KEYS:
             continue
         
         processed_keys.add(key)
@@ -478,9 +428,9 @@ def run_interactive_config(
         from fpr import find_project_root
         root = find_project_root()
         if root:
-            dst_path = Path(root) / DEFAULT_ENV_FILE
+            dst_path = Path(root) / consts.DEFAULT_ENV_FILE
         else:
-            dst_path = Path.cwd() / DEFAULT_ENV_FILE
+            dst_path = Path.cwd() / consts.DEFAULT_ENV_FILE
     
     # Track changes (pending, unsaved)
     changes: dict[str, str | None] = {}
@@ -508,9 +458,9 @@ def run_interactive_config(
         """Determine the status of a variable."""
         has_explicit = spec_obj and spec_obj.has_explicit_spec(key) if spec_obj else False
         if not has_explicit:
-            return KEY_STATUS_EXTRA
+            return consts.KEY_STATUS_EXTRA
         elif key not in raw_from_file or raw_from_file.get(key) is None:
-            return KEY_STATUS_DEFAULT
+            return consts.KEY_STATUS_DEFAULT
         else:
             try:
                 value = env.get(key)
@@ -518,9 +468,9 @@ def run_interactive_config(
                     var_spec_check = spec_obj[key]
                     if var_spec_check.validator:
                         var_spec_check.validator(value)
-                return KEY_STATUS_VALID
+                return consts.KEY_STATUS_VALID
             except Exception:
-                return KEY_STATUS_INVALID
+                return consts.KEY_STATUS_INVALID
     
     
     # Create UI components with proper state management
@@ -738,7 +688,7 @@ def run_interactive_config(
         
         current_text = edit_textarea.buffer.text
         if not state['edit_cleared'] and (current_text == "" or current_text == str(state['original_edit_value'])):
-            return UI_TEXT_DIM
+            return consts.UI_TEXT_DIM
         return ""
     
     # Use TextArea directly - it handles cursor positioning correctly
@@ -765,19 +715,19 @@ def run_interactive_config(
                 # Validation status window
                 def get_validation_status():
                     if not state['edit_mode']:
-                        return [(UI_TEXT_DIM, "")]
+                        return [(consts.UI_TEXT_DIM, "")]
                     is_valid, error_msg = state['validation_result']
                     validated_val = state['validated_value']
                     if is_valid and validated_val is not None:
                         # Show the validated value
                         validated_str = _escape_brackets(str(validated_val))
-                        return [(VALUE_COLOR_GREEN, f"{UI_VALID_PREFIX} ({validated_str})")]
+                        return [(consts.VALUE_COLOR_GREEN, f"{consts.UI_VALID_PREFIX} ({validated_str})")]
                     elif is_valid:
                         # Valid but no value (empty or None)
-                        return [(VALUE_COLOR_GREEN, UI_VALID_PREFIX)]
+                        return [(consts.VALUE_COLOR_GREEN, consts.UI_VALID_PREFIX)]
                     else:
                         error_text = _escape_brackets(error_msg or "Invalid")
-                        return [(VALUE_COLOR_RED, f"{UI_INVALID_PREFIX}: {error_text}")]
+                        return [(consts.VALUE_COLOR_RED, f"{consts.UI_INVALID_PREFIX}: {error_text}")]
                 
                 validation_window = Window(
                     height=1,
@@ -793,7 +743,7 @@ def run_interactive_config(
                         edit_textarea,  # TextArea is a container, use directly
                         validation_window,
                         Window(height=1),
-                        Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, UI_HELP_EDIT)])),
+                        Window(height=1, content=FormattedTextControl(lambda: [(consts.UI_TEXT_DIM, consts.UI_HELP_EDIT)])),
                     ]),
                     focused_element=edit_textarea,
                 )
@@ -804,9 +754,9 @@ def run_interactive_config(
                         Window(height=1, content=FormattedTextControl(lambda: [("bold", header_text)])),
                         Window(height=1),
                         list_window,
-                        Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, UI_SEPARATOR_CHAR * UI_SEPARATOR_WIDTH)])),
+                        Window(height=1, content=FormattedTextControl(lambda: [(consts.UI_TEXT_DIM, consts.UI_SEPARATOR_CHAR * consts.UI_SEPARATOR_WIDTH)])),
                         detail_window,
-                        Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, UI_HELP_BROWSE)])),
+                        Window(height=1, content=FormattedTextControl(lambda: [(consts.UI_TEXT_DIM, consts.UI_HELP_BROWSE)])),
                     ]),
                     focused_element=list_window,
                 )

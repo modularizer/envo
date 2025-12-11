@@ -30,7 +30,7 @@ from fpr import find_project_root
 
 from envo.sentinel import unspecified
 from envo.spec_type import parse_variable_spec, VariableSpecInput, VariableSpec, parse_spec_key, parse_spec, EnvSpec
-from envo.consts import USE_SPEC_DEFAULT, DEFAULT_ENV_FILE, DEFAULT_SPEC_FILES, PROJECT_ROOT_CHAR
+import envo.consts as consts
 
 
 def find_default_spec(cwd: Path | None = None) -> Path | None:
@@ -52,7 +52,7 @@ def find_default_spec(cwd: Path | None = None) -> Path | None:
         else:
             cwd = Path(cwd)
     
-    for name in DEFAULT_SPEC_FILES:
+    for name in consts.DEFAULT_SPEC_FILES:
         path = cwd / name
         if path.exists():
             return path
@@ -76,7 +76,7 @@ def find_default_env(cwd: Path | None = None) -> Path | None:
         else:
             cwd = Path(cwd)
     
-    path = cwd / DEFAULT_ENV_FILE
+    path = cwd / consts.DEFAULT_ENV_FILE
     if path.exists():
         return path
     return None
@@ -107,8 +107,8 @@ def apply_all_substitutions(env_dict: dict[str, str | None]) -> dict[str, str | 
         # Skip None values
         if value is None:
             continue
-        if PROJECT_ROOT_CHAR in value:
-            result[key] = value.replace(PROJECT_ROOT_CHAR, str(Path(project_root or Path.cwd()).expanduser().resolve()))
+        if consts.PROJECT_ROOT_CHAR in value:
+            result[key] = value.replace(consts.PROJECT_ROOT_CHAR, str(Path(project_root or Path.cwd()).expanduser().resolve()))
     return result
 
 
@@ -402,7 +402,7 @@ class Env(dict):
             spec = self.spec[key]
             s = self.raw.get(key, spec.default if default is unspecified else default)
             # Handle <default> special value - use spec's default
-            if s == USE_SPEC_DEFAULT:
+            if s == consts.USE_SPEC_DEFAULT:
                 s = spec.default
             return self.parse_value(key, s, type=type)
         return self._parsed[key]

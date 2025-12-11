@@ -2,148 +2,367 @@
 Constants and configuration for envo.
 
 This module centralizes all default values, colors, settings, and configuration
-options used throughout the envo package. By keeping these in one place, users
-can easily customize behavior and maintainers can ensure consistency.
+options used throughout the envo package.
+
+Constants are organized into three tiers:
+
+1. IMMUTABLE CONSTANTS - Cannot be changed, needed for file discovery/chaining
+   These are defined as regular module-level constants.
+
+2. PARSING CONSTANTS - Affect how values are parsed/coerced
+   These are loaded from os.environ (ENVO_*) BEFORE full env parsing.
+   Can be set in shell environment to affect all subsequent loading.
+
+3. DISPLAY CONSTANTS - Affect UI/display only
+   These are loaded from os.environ after parsing is complete.
+   Can be set in .env files and picked up dynamically.
+
+Usage:
+    # Access constants (dynamic lookup at call time)
+    import envo.consts as consts
+    print(consts.DEFAULT_GROUP)  # Checks os.environ for ENVO_DEFAULT_GROUP
 """
 
+import os
+from typing import Any
+
 # =============================================================================
-# File Names and Paths
+# IMMUTABLE CONSTANTS
 # =============================================================================
+# These CANNOT be overridden - they are needed for file discovery and chaining.
+# Changing these would create a chicken-and-egg problem.
 
 # Default environment file name
-DEFAULT_ENV_FILE = ".env"
+DEFAULT_ENV_FILE = os.environ.get("ENVO_DEFAULT_ENV_FILE", ".env")
 
 # Default spec file names (searched in order)
-DEFAULT_SPEC_FILES = ("sample.env", ".env.sample")
+# Parse from comma-separated env var, or use default tuple
+_default_spec_files_str = os.environ.get("ENVO_DEFAULT_SPEC_FILES", "")
+if _default_spec_files_str:
+    # Parse comma-separated values, strip whitespace and quotes
+    DEFAULT_SPEC_FILES = tuple(
+        f.strip().strip('"').strip("'").strip()
+        for f in _default_spec_files_str.replace("(", "").replace(")", "").split(",")
+        if f.strip()
+    )
+else:
+    DEFAULT_SPEC_FILES = ("sample.env", ".env.sample")
 
-# Special value that indicates "use the default from spec"
-USE_SPEC_DEFAULT = "<default>"
-
-# =============================================================================
-# Special ENVO Keys (for file chaining)
-# =============================================================================
-
-# Load another file with LOWER priority (current file overrides it)
+# Special key: Load another file with LOWER priority (current file overrides it)
 ENVO_EXTENDS = "ENVO_EXTENDS"
 
-# Load another file with HIGHER priority (it overrides current file)
+# Special key: Load another file with HIGHER priority (it overrides current file)
 ENVO_EXTENDED_BY = "ENVO_EXTENDED_BY"
 
 # Set of all special ENVO keys (excluded from normal env vars)
 ENVO_SPECIAL_KEYS = frozenset({ENVO_EXTENDS, ENVO_EXTENDED_BY})
 
-# =============================================================================
-# Default Values for Specs
-# =============================================================================
-
-# Default group name for variables without an explicit group
-DEFAULT_GROUP = "unknown"
-
-# Default documentation string when none is provided
-DEFAULT_DOCS = "No help available"
 
 # =============================================================================
-# Boolean Coercion Values
+# PARSING DEFAULTS
 # =============================================================================
+# These affect HOW values are parsed/coerced. They are loaded from os.environ
+# during bootstrap, BEFORE any .env file is fully parsed.
+# Set these in your shell environment to affect parsing behavior.
 
-# Values that coerce to True (case-insensitive)
-BOOL_TRUE_VALUES = frozenset({
-    "true", "1", "yes", "on", "y", "enable", "enabled"
-})
+_PARSING_DEFAULTS: dict[str, Any] = {
+    # Default group name for variables without an explicit group
+    "DEFAULT_GROUP": "unknown",
+    
+    # Default documentation string when none is provided
+    "DEFAULT_DOCS": "No help available",
+    
+    # Special value that indicates "use the default from spec"
+    "USE_SPEC_DEFAULT": "<default>",
+    
+    # Values that coerce to True (case-insensitive)
+    "BOOL_TRUE_VALUES": frozenset({
+        "true", "1", "yes", "on", "y", "enable", "enabled"
+    }),
+    
+    # Values that coerce to False (case-insensitive)
+    "BOOL_FALSE_VALUES": frozenset({
+        "false", "0", "no", "off", "n", "disable", "disabled"
+    }),
+    
+    # Values that coerce to None (case-insensitive)
+    "NULL_VALUES": frozenset({"null", "none"}),
+    
+    # Project root substitution character
+    "PROJECT_ROOT_CHAR": "%",
+    
+    # Maximum iterations for resolving $VAR_NAME references
+    "VAR_REFERENCE_MAX_ITERATIONS": 20,
+}
 
-# Values that coerce to False (case-insensitive)
-BOOL_FALSE_VALUES = frozenset({
-    "false", "0", "no", "off", "n", "disable", "disabled"
-})
-
-# Values that coerce to None (case-insensitive)
-NULL_VALUES = frozenset({"null", "none"})
-
-# =============================================================================
-# Key Status Constants (for display/styling)
-# =============================================================================
-
-KEY_STATUS_DEFAULT = "default"      # No value specified, using spec default
-KEY_STATUS_VALID = "valid"          # Value specified and valid
-KEY_STATUS_INVALID = "invalid"      # Invalid value
-KEY_STATUS_EXTRA = "extra"          # Extra key not in spec
-
-# =============================================================================
-# Color Scheme - Key Colors
-# =============================================================================
-# Hex values chosen to work on both black and white terminal backgrounds
-
-KEY_COLOR_DEFAULT = "#5f9ea0"       # Blue-gray for default/fallback values (cadet blue)
-KEY_COLOR_VALID = "#0087d7"         # Medium blue-cyan for valid specified values
-KEY_COLOR_INVALID = "#d70000"       # Darker red for invalid values
-KEY_COLOR_EXTRA = "#875faf"         # Muted purple for extra keys not in spec
-KEY_COLOR_DEFAULT_VALUE = "#0087d7" # Default fallback (medium blue-cyan)
-
-# =============================================================================
-# Color Scheme - Value Colors
-# =============================================================================
-
-VALUE_COLOR_DIM = "#808080"         # Gray for None/unset values
-VALUE_COLOR_GREEN = "#00af00"       # Medium green for true booleans
-VALUE_COLOR_RED = "#d70000"         # Darker red for false booleans
-VALUE_COLOR_YELLOW = "#ff8700"      # Gold/orange for numbers
-VALUE_COLOR_BLUE = "#005fd7"        # Medium blue for paths
-VALUE_COLOR_WHITE = ""              # Default text color for strings (no special color)
 
 # =============================================================================
-# Color Scheme - UI Colors
+# DISPLAY DEFAULTS
 # =============================================================================
+# These only affect display/UI. They can be set in .env files and will be
+# picked up dynamically after parsing completes.
 
-HIGHLIGHT_BG_COLOR = "#f5c842"      # Warm golden yellow for selected items
-UI_TEXT_DIM = "#666666"             # Dim gray for UI text (labels, separators, help text)
+_DISPLAY_DEFAULTS: dict[str, Any] = {
+    # =========================================================================
+    # Key Status Constants (for display/styling)
+    # =========================================================================
+    
+    "KEY_STATUS_DEFAULT": "default",      # No value specified, using spec default
+    "KEY_STATUS_VALID": "valid",          # Value specified and valid
+    "KEY_STATUS_INVALID": "invalid",      # Invalid value
+    "KEY_STATUS_EXTRA": "extra",          # Extra key not in spec
+    
+    # =========================================================================
+    # Color Scheme - Key Colors
+    # =========================================================================
+    # Hex values chosen to work on both black and white terminal backgrounds
+    
+    "KEY_COLOR_DEFAULT": "#5f9ea0",       # Blue-gray for default/fallback values
+    "KEY_COLOR_VALID": "#0087d7",         # Medium blue-cyan for valid specified values
+    "KEY_COLOR_INVALID": "#d70000",       # Darker red for invalid values
+    "KEY_COLOR_EXTRA": "#875faf",         # Muted purple for extra keys not in spec
+    "KEY_COLOR_DEFAULT_VALUE": "#0087d7", # Default fallback (medium blue-cyan)
+    
+    # =========================================================================
+    # Color Scheme - Value Colors
+    # =========================================================================
+    
+    "VALUE_COLOR_DIM": "#808080",         # Gray for None/unset values
+    "VALUE_COLOR_GREEN": "#00af00",       # Medium green for true booleans
+    "VALUE_COLOR_RED": "#d70000",         # Darker red for false booleans
+    "VALUE_COLOR_YELLOW": "#ff8700",      # Gold/orange for numbers
+    "VALUE_COLOR_BLUE": "#005fd7",        # Medium blue for paths
+    "VALUE_COLOR_WHITE": "",              # Default text color for strings
+    
+    # =========================================================================
+    # Color Scheme - UI Colors
+    # =========================================================================
+    
+    "HIGHLIGHT_BG_COLOR": "#f5c842",      # Warm golden yellow for selected items
+    "UI_TEXT_DIM": "#666666",             # Dim gray for UI text
+    
+    # =========================================================================
+    # Color Scheme - Highlighted State (on yellow background)
+    # =========================================================================
+    
+    "KEY_COLOR_DEFAULT_HIGHLIGHT": "#1a3a4f",
+    "KEY_COLOR_VALID_HIGHLIGHT": "#003070",
+    "KEY_COLOR_INVALID_HIGHLIGHT": "#700000",
+    "KEY_COLOR_EXTRA_HIGHLIGHT": "#4f1f6f",
+    "KEY_COLOR_DEFAULT_VALUE_HIGHLIGHT": "#003070",
+    
+    "VALUE_COLOR_DIM_HIGHLIGHT": "#2a2a2a",
+    "VALUE_COLOR_GREEN_HIGHLIGHT": "#004d00",
+    "VALUE_COLOR_RED_HIGHLIGHT": "#700000",
+    "VALUE_COLOR_YELLOW_HIGHLIGHT": "#704f00",
+    "VALUE_COLOR_BLUE_HIGHLIGHT": "#003070",
+    "VALUE_COLOR_WHITE_HIGHLIGHT": "#000000",
+    "HIGHLIGHT_TEXT_COLOR_DIM": "#2a2a2a",
+    
+    # =========================================================================
+    # UI Text and Formatting
+    # =========================================================================
+    
+    "UI_SEPARATOR_CHAR": "─",
+    "UI_SEPARATOR_WIDTH": 80,
+    "UI_HELP_BROWSE": "↑↓ Navigate  Enter Edit  ^S Save  ^Q Quit",
+    "UI_HELP_EDIT": "Press Enter to save, Ctrl+C to cancel",
+    "UI_NOT_SET": "(not set)",
+    "UI_VALID_PREFIX": "✓ Valid",
+    "UI_INVALID_PREFIX": "✗ Invalid",
+    "UI_CHANGE_ARROW": " → ",
+}
 
-# =============================================================================
-# Color Scheme - Highlighted State (on yellow background)
-# =============================================================================
-# Darker versions optimized for readability on the golden yellow background
 
-KEY_COLOR_DEFAULT_HIGHLIGHT = "#1a3a4f"    # Very dark blue-gray for default keys
-KEY_COLOR_VALID_HIGHLIGHT = "#003070"      # Very dark blue for valid keys
-KEY_COLOR_INVALID_HIGHLIGHT = "#700000"    # Very dark red for invalid keys
-KEY_COLOR_EXTRA_HIGHLIGHT = "#4f1f6f"      # Very dark purple for extra keys
-KEY_COLOR_DEFAULT_VALUE_HIGHLIGHT = "#003070"  # Very dark blue for default
+# Combined defaults for __getattr__ lookup
+_DEFAULTS: dict[str, Any] = {**_PARSING_DEFAULTS, **_DISPLAY_DEFAULTS}
 
-VALUE_COLOR_DIM_HIGHLIGHT = "#2a2a2a"      # Very dark gray for None/unset
-VALUE_COLOR_GREEN_HIGHLIGHT = "#004d00"    # Very dark green for true booleans
-VALUE_COLOR_RED_HIGHLIGHT = "#700000"      # Very dark red for false booleans
-VALUE_COLOR_YELLOW_HIGHLIGHT = "#704f00"   # Very dark brown for numbers
-VALUE_COLOR_BLUE_HIGHLIGHT = "#003070"     # Very dark blue for paths
-VALUE_COLOR_WHITE_HIGHLIGHT = "#000000"    # Black for strings (best contrast)
-HIGHLIGHT_TEXT_COLOR_DIM = "#2a2a2a"       # Very dark gray for dim text on highlight
+# Cache for loaded values (avoids repeated os.environ lookups)
+_cached_values: dict[str, Any] = {}
 
-# =============================================================================
-# UI Text and Formatting
-# =============================================================================
+# Track if bootstrap has been done
+_bootstrap_done = False
 
-# Separator line character and default width
-UI_SEPARATOR_CHAR = "─"
-UI_SEPARATOR_WIDTH = 80
 
-# Help text for interactive config navigation
-UI_HELP_BROWSE = "↑↓ Navigate  Enter Edit  ^S Save  ^Q Quit"
-UI_HELP_EDIT = "Press Enter to save, Ctrl+C to cancel"
+def _parse_collection_value(value: str) -> list[str]:
+    """
+    Parse a collection value from env file format.
+    
+    Handles formats like:
+        - {"true", "1", "yes"}  (Python set literal)
+        - ("sample.env", ".env.sample")  (Python tuple literal)
+        - true, 1, yes  (simple comma-separated)
+        - true,1,yes  (no spaces)
+    
+    Returns a list of individual string values with quotes/braces stripped.
+    """
+    # Strip outer whitespace
+    value = value.strip()
+    
+    # Remove outer braces/parentheses if present
+    if (value.startswith("{") and value.endswith("}")) or \
+       (value.startswith("(") and value.endswith(")")):
+        value = value[1:-1]
+    
+    # Split on comma
+    parts = value.split(",")
+    
+    # Clean each part: strip whitespace and quotes
+    result = []
+    for part in parts:
+        part = part.strip()
+        # Remove surrounding quotes (single or double)
+        if (part.startswith('"') and part.endswith('"')) or \
+           (part.startswith("'") and part.endswith("'")):
+            part = part[1:-1]
+        if part:  # Only add non-empty values
+            result.append(part)
+    
+    return result
 
-# Placeholder text
-UI_NOT_SET = "(not set)"
 
-# Validation status indicators
-UI_VALID_PREFIX = "✓ Valid"
-UI_INVALID_PREFIX = "✗ Invalid"
+def _coerce_config_value(name: str, value: str) -> Any:
+    """
+    Coerce a string environment value to the appropriate type based on the default.
+    """
+    default = _DEFAULTS.get(name)
+    
+    if default is None:
+        return value
+    
+    # Handle tuple types
+    if isinstance(default, tuple):
+        return tuple(_parse_collection_value(value))
+    
+    # Handle frozenset types
+    if isinstance(default, frozenset):
+        return frozenset(_parse_collection_value(value))
+    
+    # Handle set types
+    if isinstance(default, set):
+        return set(_parse_collection_value(value))
+    
+    # Handle int types
+    if isinstance(default, int):
+        try:
+            return int(value)
+        except ValueError:
+            return default
+    
+    # Handle float types
+    if isinstance(default, float):
+        try:
+            return float(value)
+        except ValueError:
+            return default
+    
+    # Handle bool types
+    if isinstance(default, bool):
+        return value.lower() in ("true", "1", "yes", "on", "y", "enable", "enabled")
+    
+    # Default: return as string
+    return value
 
-# Arrow for showing value changes
-UI_CHANGE_ARROW = " → "
 
-# =============================================================================
-# Variable Reference Resolution
-# =============================================================================
+def _bootstrap_parsing_settings():
+    """
+    Bootstrap phase: Load parsing-related settings from os.environ.
+    
+    This is called automatically on first access to any configurable constant.
+    It loads ONLY the parsing-related settings, which must be available before
+    any .env file can be properly parsed.
+    
+    These settings can be set in the shell environment:
+        export ENVO_DEFAULT_GROUP=mygroup
+        export ENVO_BOOL_TRUE_VALUES=true,yes,1,on
+    """
+    global _bootstrap_done
+    
+    if _bootstrap_done:
+        return
+    
+    # Load parsing-related settings from os.environ
+    for name in _PARSING_DEFAULTS:
+        env_key = f"ENVO_{name}"
+        if env_key in os.environ:
+            _cached_values[name] = _coerce_config_value(name, os.environ[env_key])
+    
+    _bootstrap_done = True
 
-# Maximum iterations for resolving $VAR_NAME references (prevents infinite loops)
-VAR_REFERENCE_MAX_ITERATIONS = 20
 
-# Project root substitution character
-PROJECT_ROOT_CHAR = "%"
+def __getattr__(name: str) -> Any:
+    """
+    Dynamic attribute access for module-level constants.
+    
+    On first access, performs bootstrap to load parsing settings from os.environ.
+    Then checks os.environ for ENVO_* overrides before returning defaults.
+    """
+    if name.startswith("_"):
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    
+    # Ensure bootstrap is done
+    _bootstrap_parsing_settings()
+    
+    # Check cache first
+    if name in _cached_values:
+        return _cached_values[name]
+    
+    # Check if it's a known configurable constant
+    if name in _DEFAULTS:
+        env_key = f"ENVO_{name}"
+        if env_key in os.environ:
+            value = _coerce_config_value(name, os.environ[env_key])
+            _cached_values[name] = value
+            return value
+        return _DEFAULTS[name]
+    
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    """List all available constants for tab completion and introspection."""
+    immutable = ["DEFAULT_ENV_FILE", "DEFAULT_SPEC_FILES", "ENVO_EXTENDS", 
+                 "ENVO_EXTENDED_BY", "ENVO_SPECIAL_KEYS"]
+    return immutable + list(_DEFAULTS.keys())
+
+
+def get_default(name: str) -> Any:
+    """
+    Get the hardcoded default value for a constant, ignoring any env overrides.
+    """
+    if name in _DEFAULTS:
+        return _DEFAULTS[name]
+    raise KeyError(f"Unknown constant: {name}")
+
+
+def get_all_defaults() -> dict[str, Any]:
+    """Get a copy of all default values (parsing + display)."""
+    return _DEFAULTS.copy()
+
+
+def get_parsing_defaults() -> dict[str, Any]:
+    """Get a copy of parsing-related default values."""
+    return _PARSING_DEFAULTS.copy()
+
+
+def get_display_defaults() -> dict[str, Any]:
+    """Get a copy of display-related default values."""
+    return _DISPLAY_DEFAULTS.copy()
+
+
+def get_env_key(name: str) -> str:
+    """Get the environment variable key for a constant (e.g., "DEFAULT_GROUP" -> "ENVO_DEFAULT_GROUP")."""
+    return f"ENVO_{name}"
+
+
+def is_immutable(name: str) -> bool:
+    """Check if a constant is immutable (cannot be overridden)."""
+    return name in ("DEFAULT_ENV_FILE", "DEFAULT_SPEC_FILES", "ENVO_EXTENDS", 
+                    "ENVO_EXTENDED_BY", "ENVO_SPECIAL_KEYS")
+
+
+def clear_cache():
+    """Clear the cached values, forcing re-read from os.environ on next access."""
+    global _bootstrap_done
+    _cached_values.clear()
+    _bootstrap_done = False

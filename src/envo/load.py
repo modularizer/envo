@@ -16,13 +16,7 @@ import os
 from pathlib import Path
 from typing import Literal
 
-from envo.consts import (
-    ENVO_EXTENDS,
-    ENVO_EXTENDED_BY,
-    ENVO_SPECIAL_KEYS,
-    VAR_REFERENCE_MAX_ITERATIONS,
-    NULL_VALUES,
-)
+import envo.consts as consts
 
 
 def _load_yaml(path: Path) -> dict:
@@ -168,7 +162,7 @@ def load_single_env_raw(
         current = _load_dotenv_file(env_path)
     
     # Process ENVO_EXTENDS (lower priority - load first, then current overrides)
-    extends_path = current.get(ENVO_EXTENDS)
+    extends_path = current.get(consts.ENVO_EXTENDS)
     if extends_path:
         # Resolve relative to the current file's directory
         extends_resolved = resolve_relative(extends_path, cwd=env_path.parent)
@@ -178,7 +172,7 @@ def load_single_env_raw(
         current = base
     
     # Process ENVO_EXTENDED_BY (higher priority - load after, it overrides current)
-    extended_by_path = current.get(ENVO_EXTENDED_BY)
+    extended_by_path = current.get(consts.ENVO_EXTENDED_BY)
     if extended_by_path:
         # Resolve relative to the current file's directory
         extended_by_resolved = resolve_relative(extended_by_path, cwd=env_path.parent)
@@ -187,7 +181,7 @@ def load_single_env_raw(
         current.update(override)
     
     # Remove special ENVO keys from result
-    for key in ENVO_SPECIAL_KEYS:
+    for key in consts.ENVO_SPECIAL_KEYS:
         current.pop(key, None)
     
     return current
@@ -284,7 +278,7 @@ def resolve_var_references(env_dict: dict[str, str | None]) -> dict[str, str | N
     pattern = r'\$([A-Za-z_][A-Za-z0-9_]*)'
     result = env_dict.copy()
 
-    for iteration in range(VAR_REFERENCE_MAX_ITERATIONS):
+    for iteration in range(consts.VAR_REFERENCE_MAX_ITERATIONS):
         changed = False
         for key, value in result.items():
             # Skip None values
@@ -327,7 +321,7 @@ def normalize_none_value(value: str) -> str | None:
         None if value represents None/null, otherwise original value
     """
     normalized = value.strip().lower()
-    if normalized in NULL_VALUES:
+    if normalized in consts.NULL_VALUES:
         return None
     return value
 

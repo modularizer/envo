@@ -6,7 +6,7 @@ import glob
 import json
 from pathlib import Path, PosixPath
 
-from envo.consts import BOOL_TRUE_VALUES, BOOL_FALSE_VALUES, NULL_VALUES
+import envo.consts as consts
 
 
 def coerce_bool(value: str, default: bool = False) -> bool:
@@ -32,11 +32,11 @@ def coerce_bool(value: str, default: bool = False) -> bool:
     value_lower = value.lower()
     
     # True values
-    if value_lower in BOOL_TRUE_VALUES:
+    if value_lower in consts.BOOL_TRUE_VALUES:
         return True
     
     # False values
-    if value_lower in BOOL_FALSE_VALUES:
+    if value_lower in consts.BOOL_FALSE_VALUES:
         return False
     
     # If not recognized, return default
@@ -156,12 +156,12 @@ def coerce_unknown(s: str | None, **kwargs):
         return s
     try:
         # Only "null" and "none" literals become None, empty string stays empty
-        if s.lower() in NULL_VALUES:
+        if s.lower() in consts.NULL_VALUES:
             return None
         # Empty string stays as empty string
         if s == "":
             return ""
-        if s.lower() in BOOL_TRUE_VALUES | BOOL_FALSE_VALUES:
+        if s.lower() in consts.BOOL_TRUE_VALUES | consts.BOOL_FALSE_VALUES:
             return coerce_bool(s, **kwargs)
         if s.replace("_","").isdigit() or (s.startswith('-') and s[1:].replace("_","").isdigit()):
             return coerce_int(s, **kwargs)
@@ -186,7 +186,7 @@ def coerce(s: str | None, t = None, **kwargs) -> str | float | int | bool | None
     if not isinstance(s, str):
         return s
     # Only "null" and "none" literals become None, empty string stays empty
-    if s.lower() in NULL_VALUES:
+    if s.lower() in consts.NULL_VALUES:
         return None
     if t is None:
         return coerce_unknown(s, **kwargs)
