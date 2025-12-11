@@ -9,15 +9,12 @@ Commands:
 import argparse
 import re
 import sys
-from pathlib import Path
-from typing import Literal
 
 from termite import subprint
 
 from envo.env import Env, USE_SPEC_DEFAULT, find_default_spec, find_default_env
 from envo.load import load_env_raw, ENVO_SPECIAL_KEYS
 from envo.parse_spec import env_file_to_spec
-from envo.spec_type import EnvSpec
 from envo.colors import (
     KEY_STATUS_DEFAULT,
     KEY_STATUS_VALID,
