@@ -30,13 +30,7 @@ from fpr import find_project_root
 
 from envo.sentinel import unspecified
 from envo.spec_type import parse_variable_spec, VariableSpecInput, VariableSpec, parse_spec_key, parse_spec, EnvSpec
-
-# Special value that indicates "use the default from spec"
-USE_SPEC_DEFAULT = "<default>"
-
-# Default file names for auto-discovery
-DEFAULT_ENV_FILE = ".env"
-DEFAULT_SPEC_FILES = ("sample.env", ".env.sample")
+from envo.consts import USE_SPEC_DEFAULT, DEFAULT_ENV_FILE, DEFAULT_SPEC_FILES, PROJECT_ROOT_CHAR
 
 
 def find_default_spec(cwd: Path | None = None) -> Path | None:
@@ -113,8 +107,8 @@ def apply_all_substitutions(env_dict: dict[str, str | None]) -> dict[str, str | 
         # Skip None values
         if value is None:
             continue
-        if '%' in value:
-            result[key] = value.replace("%", str(Path(project_root or Path.cwd()).expanduser().resolve()))
+        if PROJECT_ROOT_CHAR in value:
+            result[key] = value.replace(PROJECT_ROOT_CHAR, str(Path(project_root or Path.cwd()).expanduser().resolve()))
     return result
 
 

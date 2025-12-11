@@ -73,6 +73,7 @@ from typing import Any, Callable
 from fpr import find_project_root
 
 from envo.spec_type import VariableSpec, EnvSpec
+from envo.consts import DEFAULT_GROUP, DEFAULT_DOCS
 
 
 def _load_yaml(path: Path) -> dict:
@@ -109,7 +110,7 @@ class ParsedVariable:
     name: str
     value: str | None  # default value: None means unset, "" means explicit empty string
     help_text: str = ""
-    groups: tuple[str, ...] = ("unknown",)
+    groups: tuple[str, ...] = (DEFAULT_GROUP,)
     type_hint: str | type | None = None
     min_val: float | None = None
     max_val: float | None = None
@@ -268,7 +269,7 @@ def build_validator(parsed: ParsedVariable) -> Callable[[Any], Any] | None:
 
 def parse_env_file(
     path: str | Path,
-    default_group: str = "unknown",
+    default_group: str = DEFAULT_GROUP,
 ) -> tuple[list[ParsedVariable], list[ParsedGroup]]:
     """
     Parse an env file into structured data.
@@ -510,7 +511,7 @@ def parsed_to_variable_spec(parsed: ParsedVariable) -> VariableSpec:
     
     return VariableSpec(
         groups=parsed.groups,
-        docs=parsed.help_text or "No help available",
+        docs=parsed.help_text or DEFAULT_DOCS,
         type=inferred_type,
         default=parsed.value,  # None means unset, "" means explicit empty
         required=parsed.required,
@@ -518,7 +519,7 @@ def parsed_to_variable_spec(parsed: ParsedVariable) -> VariableSpec:
     )
 
 
-def _parse_structured_spec(data: dict, default_group: str = "unknown") -> list[ParsedVariable]:
+def _parse_structured_spec(data: dict, default_group: str = DEFAULT_GROUP) -> list[ParsedVariable]:
     """
     Parse a structured dictionary (from JSON/YAML/TOML) into ParsedVariable list.
     
@@ -664,7 +665,7 @@ def _convert_to_string(value: Any) -> str | None:
 
 def env_file_to_spec(
     path: str | Path,
-    default_group: str = "unknown",
+    default_group: str = DEFAULT_GROUP,
     cwd: str | Path | None = "find_project_root",
 ) -> EnvSpec:
     """
@@ -782,7 +783,7 @@ def print_spec_summary(spec: EnvSpec) -> None:
                     type_str = f" ({var_spec.type})"
             default_str = f" = {var_spec.default!r}" if var_spec.default else ""
             print(f"  {name}{type_str}{default_str}")
-            if var_spec.docs and var_spec.docs != "No help available":
+            if var_spec.docs and var_spec.docs != DEFAULT_DOCS:
                 print(f"    {var_spec.docs}")
 
 

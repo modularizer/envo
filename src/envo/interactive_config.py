@@ -14,29 +14,38 @@ from prompt_toolkit.keys import Keys
 from termite import subprint
 
 from envo.env import Env, find_default_spec, find_default_env
-from envo.load import load_single_env_raw, ENVO_SPECIAL_KEYS, resolve_var_references
+from envo.load import load_single_env_raw, resolve_var_references
 from envo.coerce import coerce
 from envo.parse_spec import env_file_to_spec
 from envo.cli import _escape_brackets
-from envo.colors import (
+from envo.consts import (
+    # Special keys
+    ENVO_SPECIAL_KEYS,
+    # Default file
+    DEFAULT_ENV_FILE,
+    # Key status
     KEY_STATUS_DEFAULT,
     KEY_STATUS_VALID,
     KEY_STATUS_INVALID,
     KEY_STATUS_EXTRA,
+    # Key colors
     KEY_COLOR_DEFAULT,
     KEY_COLOR_VALID,
     KEY_COLOR_INVALID,
     KEY_COLOR_EXTRA,
     KEY_COLOR_DEFAULT_VALUE,
+    # Value colors
     VALUE_COLOR_DIM,
     VALUE_COLOR_GREEN,
     VALUE_COLOR_RED,
     VALUE_COLOR_YELLOW,
     VALUE_COLOR_BLUE,
     VALUE_COLOR_WHITE,
+    # UI colors
     HIGHLIGHT_BG_COLOR,
     HIGHLIGHT_TEXT_COLOR_DIM,
     UI_TEXT_DIM,
+    # Highlight colors
     KEY_COLOR_DEFAULT_HIGHLIGHT,
     KEY_COLOR_VALID_HIGHLIGHT,
     KEY_COLOR_INVALID_HIGHLIGHT,
@@ -48,6 +57,17 @@ from envo.colors import (
     VALUE_COLOR_YELLOW_HIGHLIGHT,
     VALUE_COLOR_BLUE_HIGHLIGHT,
     VALUE_COLOR_WHITE_HIGHLIGHT,
+    # UI text
+    UI_SEPARATOR_CHAR,
+    UI_SEPARATOR_WIDTH,
+    UI_HELP_BROWSE,
+    UI_HELP_EDIT,
+    UI_NOT_SET,
+    UI_VALID_PREFIX,
+    UI_INVALID_PREFIX,
+    UI_CHANGE_ARROW,
+    # Default docs
+    DEFAULT_DOCS,
 )
 
 from prompt_toolkit import Application
@@ -120,7 +140,7 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
     """Format a variable line for display in the list - matches envo show colors."""
     escaped_key = _escape_brackets(key)
     escaped_value = _escape_brackets(str(value)) if value is not None else ""
-    escaped_saved_value = _escape_brackets(str(saved_value)) if saved_value is not None else "(not set)"
+    escaped_saved_value = _escape_brackets(str(saved_value)) if saved_value is not None else UI_NOT_SET
     
     key_style = _get_key_style(key_status, highlighted=selected)
     value_style = _get_value_style(value, highlighted=selected)
@@ -150,7 +170,7 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
             if saved_value_style:
                 strike_style = f"bg:{HIGHLIGHT_BG_COLOR} strike {saved_value_style}"
             parts.append((strike_style, escaped_saved_value))
-            parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", " → "))
+            parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", UI_CHANGE_ARROW))
             # Show new value
             if value is not None:
                 if value_style:
@@ -158,7 +178,7 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
                 else:
                     parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}", escaped_value))
             else:
-                parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}{HIGHLIGHT_TEXT_COLOR_DIM}", "(not set)"))
+                parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}{HIGHLIGHT_TEXT_COLOR_DIM}", UI_NOT_SET))
         else:
             # Normal value display
             if value is not None:
@@ -167,7 +187,7 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
                 else:
                     parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", escaped_value))
             else:
-                parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {HIGHLIGHT_TEXT_COLOR_DIM}", "(not set)"))
+                parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {HIGHLIGHT_TEXT_COLOR_DIM}", UI_NOT_SET))
         parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", " "))
     else:
         # Normal item - use same colors as envo show
@@ -191,7 +211,7 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
             if saved_value_style:
                 strike_style = f"strike {saved_value_style}"
             parts.append((strike_style, escaped_saved_value))
-            parts.append(("", " → "))
+            parts.append(("", UI_CHANGE_ARROW))
             # Show new value
             if value is not None:
                 if value_style:
@@ -199,7 +219,7 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
                 else:
                     parts.append((f"{italic_prefix}", escaped_value))
             else:
-                parts.append((f"{italic_prefix}", "(not set)"))
+                parts.append((f"{italic_prefix}", UI_NOT_SET))
         else:
             # Normal value display
             if value is not None:
@@ -208,7 +228,7 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
                 else:
                     parts.append(("", escaped_value))  # WHITE - default
             else:
-                parts.append(("", "(not set)"))  # DIM - no special color
+                parts.append(("", UI_NOT_SET))  # DIM - no special color
     
     return parts
 
@@ -218,12 +238,12 @@ def format_variable_detail(key: str, var_spec, current_value, raw_from_file: dic
     parts = []
     
     if not key:
-        return [(UI_TEXT_DIM, "Select a variable to view details")]
+        return [(UI_TEXT_DIM, "Select a variable to view details")]  # Could also be a const if needed
     
     # Line 1: Key and docs on same line
     escaped_key = _escape_brackets(key)
     parts.append(("bold", escaped_key))
-    docs = var_spec.docs if var_spec and var_spec.docs != "No help available" else None
+    docs = var_spec.docs if var_spec and var_spec.docs != DEFAULT_DOCS else None
     if docs:
         escaped_docs = _escape_brackets(docs)
         parts.append((UI_TEXT_DIM, f"  {escaped_docs}"))
@@ -231,7 +251,7 @@ def format_variable_detail(key: str, var_spec, current_value, raw_from_file: dic
     
     # Line 2: Type, Current, Default
     var_type = var_spec.type if var_spec else None
-    current_str = str(current_value) if current_value is not None else "(not set)"
+    current_str = str(current_value) if current_value is not None else UI_NOT_SET
     default = var_spec.default if var_spec else None
     
     line2_parts = []
@@ -458,9 +478,9 @@ def run_interactive_config(
         from fpr import find_project_root
         root = find_project_root()
         if root:
-            dst_path = Path(root) / ".env"
+            dst_path = Path(root) / DEFAULT_ENV_FILE
         else:
-            dst_path = Path.cwd() / ".env"
+            dst_path = Path.cwd() / DEFAULT_ENV_FILE
     
     # Track changes (pending, unsaved)
     changes: dict[str, str | None] = {}
@@ -751,13 +771,13 @@ def run_interactive_config(
                     if is_valid and validated_val is not None:
                         # Show the validated value
                         validated_str = _escape_brackets(str(validated_val))
-                        return [(VALUE_COLOR_GREEN, f"✓ Valid ({validated_str})")]
+                        return [(VALUE_COLOR_GREEN, f"{UI_VALID_PREFIX} ({validated_str})")]
                     elif is_valid:
                         # Valid but no value (empty or None)
-                        return [(VALUE_COLOR_GREEN, "✓ Valid")]
+                        return [(VALUE_COLOR_GREEN, UI_VALID_PREFIX)]
                     else:
                         error_text = _escape_brackets(error_msg or "Invalid")
-                        return [(VALUE_COLOR_RED, f"✗ Invalid: {error_text}")]
+                        return [(VALUE_COLOR_RED, f"{UI_INVALID_PREFIX}: {error_text}")]
                 
                 validation_window = Window(
                     height=1,
@@ -773,7 +793,7 @@ def run_interactive_config(
                         edit_textarea,  # TextArea is a container, use directly
                         validation_window,
                         Window(height=1),
-                        Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, "Press Enter to save, Ctrl+C to cancel")])),
+                        Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, UI_HELP_EDIT)])),
                     ]),
                     focused_element=edit_textarea,
                 )
@@ -784,9 +804,9 @@ def run_interactive_config(
                         Window(height=1, content=FormattedTextControl(lambda: [("bold", header_text)])),
                         Window(height=1),
                         list_window,
-                        Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, "─" * 80)])),
+                        Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, UI_SEPARATOR_CHAR * UI_SEPARATOR_WIDTH)])),
                         detail_window,
-                        Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, "↑↓ Navigate  Enter Edit  ^S Save  ^Q Quit")])),
+                        Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, UI_HELP_BROWSE)])),
                     ]),
                     focused_element=list_window,
                 )

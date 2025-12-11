@@ -12,10 +12,13 @@ import sys
 
 from termite import subprint
 
-from envo.env import Env, USE_SPEC_DEFAULT, find_default_spec, find_default_env
-from envo.load import load_env_raw, ENVO_SPECIAL_KEYS
+from envo.env import Env, find_default_spec, find_default_env
+from envo.load import load_env_raw
 from envo.parse_spec import env_file_to_spec
-from envo.colors import (
+from envo.consts import (
+    USE_SPEC_DEFAULT,
+    ENVO_SPECIAL_KEYS,
+    DEFAULT_DOCS,
     KEY_STATUS_DEFAULT,
     KEY_STATUS_VALID,
     KEY_STATUS_INVALID,
@@ -74,7 +77,7 @@ def print_key_value(key: str, value, export: bool = False, value_only: bool = Fa
     """Print a key-value pair with optional colors."""
     # Build docs suffix
     docs_text = ""
-    if docs and docs != "No help available":
+    if docs and docs != DEFAULT_DOCS:
         docs_text = f"  # {docs}"
     
     if no_color:
@@ -102,7 +105,7 @@ def print_key_value(key: str, value, export: bool = False, value_only: bool = Fa
     
     # Build colored docs suffix
     docs_suffix = ""
-    if docs and docs != "No help available":
+    if docs and docs != DEFAULT_DOCS:
         escaped_docs = _escape_brackets(docs)
         docs_suffix = f" DIM[# {escaped_docs}]"
     

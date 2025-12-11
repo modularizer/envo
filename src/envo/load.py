@@ -16,10 +16,13 @@ import os
 from pathlib import Path
 from typing import Literal
 
-# Special keys for env file chaining
-ENVO_EXTENDS = "ENVO_EXTENDS"
-ENVO_EXTENDED_BY = "ENVO_EXTENDED_BY"
-ENVO_SPECIAL_KEYS = {ENVO_EXTENDS, ENVO_EXTENDED_BY}
+from envo.consts import (
+    ENVO_EXTENDS,
+    ENVO_EXTENDED_BY,
+    ENVO_SPECIAL_KEYS,
+    VAR_REFERENCE_MAX_ITERATIONS,
+    NULL_VALUES,
+)
 
 
 def _load_yaml(path: Path) -> dict:
@@ -281,8 +284,7 @@ def resolve_var_references(env_dict: dict[str, str | None]) -> dict[str, str | N
     pattern = r'\$([A-Za-z_][A-Za-z0-9_]*)'
     result = env_dict.copy()
 
-    max_iterations = 20
-    for iteration in range(max_iterations):
+    for iteration in range(VAR_REFERENCE_MAX_ITERATIONS):
         changed = False
         for key, value in result.items():
             # Skip None values
@@ -325,7 +327,7 @@ def normalize_none_value(value: str) -> str | None:
         None if value represents None/null, otherwise original value
     """
     normalized = value.strip().lower()
-    if normalized in ("none", "null"):
+    if normalized in NULL_VALUES:
         return None
     return value
 

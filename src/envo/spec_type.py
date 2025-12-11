@@ -5,6 +5,8 @@ from collections.abc import Iterable, Callable
 from dataclasses import dataclass
 from typing import Any
 
+from envo.consts import DEFAULT_GROUP, DEFAULT_DOCS
+
 
 def is_pydantic_model(obj) -> bool:
     """
@@ -106,8 +108,8 @@ class VariableSpec:
         ... )
     """
 
-    groups: Iterable[str] = ("unknown",)
-    docs: str = "No help available"
+    groups: Iterable[str] = (DEFAULT_GROUP,)
+    docs: str = DEFAULT_DOCS
     type: str | type | None = None
     pre: Callable[[str], str] | None = None
     coerce: bool | Callable[[str], Any] = True
