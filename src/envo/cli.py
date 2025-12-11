@@ -18,6 +18,23 @@ from envo.env import Env, USE_SPEC_DEFAULT, find_default_spec, find_default_env
 from envo.load import load_env_raw, ENVO_SPECIAL_KEYS
 from envo.parse_spec import env_file_to_spec
 from envo.spec_type import EnvSpec
+from envo.colors import (
+    KEY_STATUS_DEFAULT,
+    KEY_STATUS_VALID,
+    KEY_STATUS_INVALID,
+    KEY_STATUS_EXTRA,
+    KEY_COLOR_DEFAULT,
+    KEY_COLOR_VALID,
+    KEY_COLOR_INVALID,
+    KEY_COLOR_EXTRA,
+    KEY_COLOR_DEFAULT_VALUE,
+    VALUE_COLOR_DIM,
+    VALUE_COLOR_GREEN,
+    VALUE_COLOR_RED,
+    VALUE_COLOR_YELLOW,
+    VALUE_COLOR_BLUE,
+    VALUE_COLOR_WHITE,
+)
 
 
 def _escape_brackets(text: str) -> str:
@@ -28,33 +45,31 @@ def _escape_brackets(text: str) -> str:
 def _get_value_style(value) -> str:
     """Get the appropriate style name for a value based on its type."""
     if value is None:
-        return "DIM"
+        return f"rgb[{VALUE_COLOR_DIM}]"
     if isinstance(value, bool):
-        return "GREEN" if value else "RED"
+        color = VALUE_COLOR_GREEN if value else VALUE_COLOR_RED
+        return f"rgb[{color}]"
     if isinstance(value, (int, float)):
-        return "YELLOW"
+        return f"rgb[{VALUE_COLOR_YELLOW}]"
     if isinstance(value, str):
         if '/' in value or value.startswith('~'):
-            return "BLUE"
+            return f"rgb[{VALUE_COLOR_BLUE}]"
+    # For white/default, use termite's WHITE style
     return "WHITE"
-
-
-# Key status for coloring
-KEY_STATUS_DEFAULT = "default"      # No value specified, using spec default
-KEY_STATUS_VALID = "valid"          # Value specified and valid
-KEY_STATUS_INVALID = "invalid"      # Invalid value
-KEY_STATUS_EXTRA = "extra"          # Extra key not in spec
 
 
 def _get_key_style(status: str) -> str:
     """Get the style for a key based on its status."""
-    styles = {
-        KEY_STATUS_DEFAULT: "DIM+BLUE",       # Blue-gray for default/fallback values
-        KEY_STATUS_VALID: "BOLD+CYAN",        # Cyan for valid specified values
-        KEY_STATUS_INVALID: "BOLD+RED",       # Red for invalid values
-        KEY_STATUS_EXTRA: "DIM+MAGENTA",      # Magenta-gray for extra keys not in spec
-    }
-    return styles.get(status, "BOLD+CYAN")
+    if status == KEY_STATUS_DEFAULT:
+        return f"rgb[{KEY_COLOR_DEFAULT}]"
+    elif status == KEY_STATUS_VALID:
+        return f"BOLD+rgb[{KEY_COLOR_VALID}]"
+    elif status == KEY_STATUS_INVALID:
+        return f"BOLD+rgb[{KEY_COLOR_INVALID}]"
+    elif status == KEY_STATUS_EXTRA:
+        return f"rgb[{KEY_COLOR_EXTRA}]"
+    else:
+        return f"BOLD+rgb[{KEY_COLOR_DEFAULT_VALUE}]"
 
 
 def print_key_value(key: str, value, export: bool = False, value_only: bool = False, 
@@ -303,6 +318,23 @@ def cmd_show(args):
                           docs=docs_text, key_status=key_status, no_color=args.no_color)
     
     return 0
+
+
+def cmd_config(args):
+    """Run the interactive configuration editor."""
+    from envo.interactive_config import run_interactive_config
+    
+    return run_interactive_config(
+        key=args.key,
+        group=args.group,
+        grep=args.grep,
+        ignore_case=args.ignore_case,
+        all_vars=args.all_vars,
+        env_file=args.env_file,
+        spec=args.spec,
+        no_system=args.no_system,
+        dst=args.dst,
+    )
 
 
 def cmd_validate(args):
@@ -556,6 +588,55 @@ def main():
         help="Don't warn about missing optional variables",
     )
     validate_parser.set_defaults(func=cmd_validate)
+    
+    # === config command ===
+    config_parser = subparsers.add_parser(
+        "config",
+        help="Interactive configuration editor for environment variables",
+    )
+    config_parser.add_argument(
+        "key",
+        nargs="?",
+        help="Variable name or glob pattern to filter (e.g., 'DB_*', 'API_???_KEY')",
+    )
+    config_parser.add_argument(
+        "-e", "--env-file",
+        action="append",
+        help="Env file(s) to load (default: .env)",
+    )
+    config_parser.add_argument(
+        "-s", "--spec",
+        help="Spec file for type coercion (default: sample.env or .env.sample)",
+    )
+    config_parser.add_argument(
+        "-g", "--group",
+        help="Filter by group name",
+    )
+    config_parser.add_argument(
+        "--grep",
+        help="Filter keys by regex pattern",
+    )
+    config_parser.add_argument(
+        "-i", "--ignore-case",
+        action="store_true",
+        help="Case-insensitive grep",
+    )
+    config_parser.add_argument(
+        "--no-system",
+        action="store_true",
+        help="Don't include system environment variables",
+    )
+    config_parser.add_argument(
+        "-a", "--all",
+        action="store_true",
+        dest="all_vars",
+        help="Show all variables (including those only matching fallback patterns)",
+    )
+    config_parser.add_argument(
+        "--dst",
+        help="Destination file to save changes to (default: .env in project root)",
+    )
+    config_parser.set_defaults(func=cmd_config)
     
     # Parse args
     args = parser.parse_args()

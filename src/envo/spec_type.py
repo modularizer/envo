@@ -161,6 +161,25 @@ def parse_variable_spec(v: VariableSpecInput, default_variable_spec: VariableSpe
         v2 = VariableSpec(coerce=v)
     else:
         raise ValueError(f"Unknown spec: {v}")
+    
+    # Infer type from default if type is not set
+    if v2.type is None and v2.default is not None and v2.default != "":
+        # Try to infer type from default value
+        from envo.coerce import coerce_unknown
+        try:
+            coerced_default = coerce_unknown(v2.default)
+            # Get the type of the coerced value
+            if isinstance(coerced_default, bool):
+                v2.type = bool
+            elif isinstance(coerced_default, int):
+                v2.type = int
+            elif isinstance(coerced_default, float):
+                v2.type = float
+            # For strings, paths, dicts, lists - keep as None (no type enforcement)
+        except Exception:
+            # If coercion fails, leave type as None
+            pass
+    
     return v2
 
 def parse_spec_key(k: str | re.Pattern) -> str | re.Pattern:

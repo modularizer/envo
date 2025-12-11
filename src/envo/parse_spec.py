@@ -77,22 +77,16 @@ from envo.spec_type import VariableSpec, EnvSpec
 
 def _load_yaml(path: Path) -> dict:
     """Load a YAML file. Requires PyYAML."""
-    try:
-        import yaml
-    except ImportError:
-        raise ImportError("PyYAML is required to load .yaml files. Install with: pip install pyyaml")
+    import yaml
     return yaml.safe_load(path.read_text()) or {}
 
 
 def _load_toml(path: Path) -> dict:
     """Load a TOML file. Uses tomllib (3.11+) or tomli."""
     try:
-        import tomllib
+        import tomllib  # Python 3.11+
     except ImportError:
-        try:
-            import tomli as tomllib
-        except ImportError:
-            raise ImportError("tomli is required to load .toml files on Python < 3.11. Install with: pip install tomli")
+        import tomli as tomllib  # Python < 3.11
     return tomllib.loads(path.read_text()) or {}
 
 
@@ -492,11 +486,32 @@ def parsed_to_variable_spec(parsed: ParsedVariable) -> VariableSpec:
     Note:
         - parsed.value of None means "not set" -> default=None
         - parsed.value of "" means "explicitly empty" -> default=""
+        - If type is not set but default is not None, infer type from default
     """
+    # Infer type from default if type is not set
+    inferred_type = parsed.type_hint
+    if inferred_type is None and parsed.value is not None and parsed.value != "":
+        # Try to infer type from default value
+        from envo.coerce import coerce_unknown
+        try:
+            coerced_default = coerce_unknown(parsed.value)
+            # Get the type of the coerced value
+            if isinstance(coerced_default, bool):
+                inferred_type = bool
+            elif isinstance(coerced_default, int):
+                inferred_type = int
+            elif isinstance(coerced_default, float):
+                inferred_type = float
+            # For strings, paths, dicts, lists - keep as str (default)
+            # We don't want to infer str type since that's the default
+        except Exception:
+            # If coercion fails, leave type as None
+            pass
+    
     return VariableSpec(
         groups=parsed.groups,
         docs=parsed.help_text or "No help available",
-        type=parsed.type_hint,
+        type=inferred_type,
         default=parsed.value,  # None means unset, "" means explicit empty
         required=parsed.required,
         validator=build_validator(parsed),

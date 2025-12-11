@@ -1,0 +1,9 @@
+# Core dependencies
+modularizer-termite
+modularizer-fpr
+
+# Optional dependencies for full functionality
+prompt-toolkit
+pyyaml
+tomli; python_version < '3.11'
+

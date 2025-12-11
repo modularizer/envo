@@ -24,22 +24,16 @@ ENVO_SPECIAL_KEYS = {ENVO_EXTENDS, ENVO_EXTENDED_BY}
 
 def _load_yaml(path: Path) -> dict:
     """Load a YAML file. Requires PyYAML."""
-    try:
-        import yaml
-    except ImportError:
-        raise ImportError("PyYAML is required to load .yaml files. Install with: pip install pyyaml")
+    import yaml
     return yaml.safe_load(path.read_text()) or {}
 
 
 def _load_toml(path: Path) -> dict:
     """Load a TOML file. Uses tomllib (3.11+) or tomli."""
     try:
-        import tomllib
+        import tomllib  # Python 3.11+
     except ImportError:
-        try:
-            import tomli as tomllib
-        except ImportError:
-            raise ImportError("tomli is required to load .toml files on Python < 3.11. Install with: pip install tomli")
+        import tomli as tomllib  # Python < 3.11
     return tomllib.loads(path.read_text()) or {}
 
 

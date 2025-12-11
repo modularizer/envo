@@ -21,6 +21,13 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
 ]
+dependencies = [
+    "modularizer-termite",
+    "modularizer-fpr",
+    "prompt-toolkit",
+    "pyyaml",
+    "tomli; python_version < '3.11'",
+]
 
 [project.scripts]
 envo = "envo:main"
