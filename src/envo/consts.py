@@ -165,7 +165,7 @@ _DISPLAY_DEFAULTS: dict[str, Any] = {
     
     "UI_SEPARATOR_CHAR": "─",
     "UI_SEPARATOR_WIDTH": 80,
-    "UI_HELP_BROWSE": "↑↓ Navigate  Enter Edit  ^S Save  ^Q Quit",
+    "UI_HELP_BROWSE": "↑↓ Navigate  Type to Search  Esc Clear  Enter Edit  ^S Save  ^Q Quit",
     "UI_HELP_EDIT": "Press Enter to save, Ctrl+C to cancel",
     "UI_NOT_SET": "(not set)",
     "UI_VALID_PREFIX": "✓ Valid",

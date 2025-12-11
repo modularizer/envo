@@ -456,7 +456,16 @@ def run_interactive_config(
         'cached_layout': None,  # Layout cache
         'cached_edit_mode': None,  # Track edit mode for layout cache
         'text_changed_handler': None,  # Text change handler reference
+        'search_query': '',  # Current search/filter query
     }
+    
+    # Filtered keys based on search query
+    def get_filtered_keys():
+        """Get the list of keys filtered by search query."""
+        query = state['search_query'].lower()
+        if not query:
+            return keys
+        return [k for k in keys if query in k.lower()]
     
     def get_visible_list_height() -> int:
         """Calculate how many list items can be visible based on terminal height."""
@@ -474,9 +483,15 @@ def run_interactive_config(
     
     def ensure_selected_visible():
         """Adjust scroll_offset so selected_index is visible."""
+        filtered = get_filtered_keys()
         visible_height = get_visible_list_height()
         selected = state['selected_index']
         scroll = state['scroll_offset']
+        
+        # Clamp selected_index to valid range for filtered list
+        if filtered:
+            state['selected_index'] = max(0, min(selected, len(filtered) - 1))
+            selected = state['selected_index']
         
         # If selected is above visible area, scroll up
         if selected < scroll:
@@ -486,7 +501,7 @@ def run_interactive_config(
             state['scroll_offset'] = selected - visible_height + 1
         
         # Clamp scroll_offset to valid range
-        max_scroll = max(0, len(keys) - visible_height)
+        max_scroll = max(0, len(filtered) - visible_height)
         state['scroll_offset'] = max(0, min(state['scroll_offset'], max_scroll))
     
     def get_variable_status(key: str) -> str:
@@ -512,19 +527,30 @@ def run_interactive_config(
     def get_list_content():
         """Get the current list content with scrolling support."""
         content = []
+        filtered = get_filtered_keys()
+        
+        # Show search query if active
+        if state['search_query']:
+            content.append((consts.UI_TEXT_DIM, f"  Search: "))
+            content.append(("bold", state['search_query']))
+            content.append((consts.UI_TEXT_DIM, f"  ({len(filtered)}/{len(keys)} matches)\n"))
+        
+        if not filtered:
+            content.append((consts.UI_TEXT_DIM, "  No matches found. Press Escape to clear search.\n"))
+            return content
         
         # Calculate visible range
         visible_height = get_visible_list_height()
         scroll_offset = state['scroll_offset']
         start_idx = scroll_offset
-        end_idx = min(len(keys), scroll_offset + visible_height)
+        end_idx = min(len(filtered), scroll_offset + visible_height)
         
         # Show scroll indicator at top if scrolled down
         if scroll_offset > 0:
             content.append((consts.UI_TEXT_DIM, f"  ↑ {scroll_offset} more above\n"))
         
         for i in range(start_idx, end_idx):
-            key = keys[i]
+            key = filtered[i]
             # Priority: pending changes > committed values > env
             if key in changes:
                 value = changes[key]
@@ -545,7 +571,7 @@ def run_interactive_config(
             content.append(("", "\n"))
         
         # Show scroll indicator at bottom if more items below
-        remaining = len(keys) - end_idx
+        remaining = len(filtered) - end_idx
         if remaining > 0:
             content.append((consts.UI_TEXT_DIM, f"  ↓ {remaining} more below"))
         
@@ -674,10 +700,12 @@ def run_interactive_config(
         """Get the current detail content."""
         if state['edit_mode'] and state['current_edit_key']:
             key = state['current_edit_key']
-        elif keys:
-            key = keys[state['selected_index']]
         else:
-            return [("dim", "No variables available")]
+            filtered = get_filtered_keys()
+            if filtered and state['selected_index'] < len(filtered):
+                key = filtered[state['selected_index']]
+            else:
+                return [("dim", "No variables available")]
         
         try:
             var_spec = spec_obj[key] if spec_obj else None
@@ -847,9 +875,12 @@ def run_interactive_config(
     
     def _navigate_up():
         """Move selection up, with optional wrap-around."""
+        filtered = get_filtered_keys()
+        if not filtered:
+            return
         if state['selected_index'] == 0:
             if consts.CYCLE_ENDLESSLY:
-                state['selected_index'] = len(keys) - 1
+                state['selected_index'] = len(filtered) - 1
             # else: stay at 0
         else:
             state['selected_index'] -= 1
@@ -857,7 +888,10 @@ def run_interactive_config(
     
     def _navigate_down():
         """Move selection down, with optional wrap-around."""
-        if state['selected_index'] == len(keys) - 1:
+        filtered = get_filtered_keys()
+        if not filtered:
+            return
+        if state['selected_index'] == len(filtered) - 1:
             if consts.CYCLE_ENDLESSLY:
                 state['selected_index'] = 0
             # else: stay at last
@@ -877,16 +911,51 @@ def run_interactive_config(
         """Move selection down."""
         _navigate_down()
         event.app.invalidate()
-
     
+    # Search functionality - typing characters filters the list
+    @kb.add('escape', filter=is_not_edit_mode)
+    def clear_search(event):
+        """Clear search query."""
+        if state['search_query']:
+            state['search_query'] = ''
+            state['selected_index'] = 0
+            state['scroll_offset'] = 0
+            event.app.invalidate()
+    
+    @kb.add('backspace', filter=is_not_edit_mode)
+    def search_backspace(event):
+        """Remove last character from search query."""
+        if state['search_query']:
+            state['search_query'] = state['search_query'][:-1]
+            state['selected_index'] = 0
+            state['scroll_offset'] = 0
+            ensure_selected_visible()
+            event.app.invalidate()
+    
+    # Add printable characters to search
+    @kb.add(Keys.Any, filter=is_not_edit_mode)
+    def search_add_char(event):
+        """Add typed character to search query."""
+        char = event.data
+        # Only add printable characters (not control characters)
+        if char and len(char) == 1 and char.isprintable() and char not in ('\r', '\n', '\t'):
+            state['search_query'] += char
+            state['selected_index'] = 0
+            state['scroll_offset'] = 0
+            ensure_selected_visible()
+            event.app.invalidate()
+
     @kb.add('enter')
     def enter_edit(event):
         if not state['edit_mode']:
+            filtered = get_filtered_keys()
+            if not filtered:
+                return  # No items to edit
             # Ensure handler is detached before entering edit mode
             ensure_handler_detached()
             state['edit_mode'] = True
             state['edit_cleared'] = False
-            state['current_edit_key'] = keys[state['selected_index']]
+            state['current_edit_key'] = filtered[state['selected_index']]
             current_value = changes.get(state['current_edit_key'], env.get(state['current_edit_key']))
             state['original_edit_value'] = current_value
             # Initialize buffer with original value so cursor position matches
