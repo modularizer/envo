@@ -439,9 +439,13 @@ def run_interactive_config(
     committed_values: dict[str, str | None] = {}
     
     # Create the interactive application
+    # Store app reference for use in callbacks (defined early for get_visible_list_height)
+    app_ref = [None]  # Use list to allow modification in nested scope
+    
     # Simple state - selected_index ONLY changes in arrow handlers
     state = {
         'selected_index': 0,
+        'scroll_offset': 0,  # First visible item index for scrolling
         'edit_mode': False,
         'current_edit_key': None,
         'edit_buffer': None,
@@ -453,6 +457,37 @@ def run_interactive_config(
         'cached_edit_mode': None,  # Track edit mode for layout cache
         'text_changed_handler': None,  # Text change handler reference
     }
+    
+    def get_visible_list_height() -> int:
+        """Calculate how many list items can be visible based on terminal height."""
+        if app_ref[0] and app_ref[0].output:
+            try:
+                size = app_ref[0].output.get_size()
+                terminal_height = size.rows
+                # Subtract space for: header(1) + blank(1) + separator(1) + detail(3) + help(1) + buffer(1)
+                list_height = terminal_height - 8
+                return max(1, list_height)
+            except Exception:
+                pass
+        # Fallback to reasonable default
+        return 20
+    
+    def ensure_selected_visible():
+        """Adjust scroll_offset so selected_index is visible."""
+        visible_height = get_visible_list_height()
+        selected = state['selected_index']
+        scroll = state['scroll_offset']
+        
+        # If selected is above visible area, scroll up
+        if selected < scroll:
+            state['scroll_offset'] = selected
+        # If selected is below visible area, scroll down
+        elif selected >= scroll + visible_height:
+            state['scroll_offset'] = selected - visible_height + 1
+        
+        # Clamp scroll_offset to valid range
+        max_scroll = max(0, len(keys) - visible_height)
+        state['scroll_offset'] = max(0, min(state['scroll_offset'], max_scroll))
     
     def get_variable_status(key: str) -> str:
         """Determine the status of a variable."""
@@ -475,9 +510,21 @@ def run_interactive_config(
     
     # Create UI components with proper state management
     def get_list_content():
-        """Get the current list content."""
+        """Get the current list content with scrolling support."""
         content = []
-        for i, key in enumerate(keys):
+        
+        # Calculate visible range
+        visible_height = get_visible_list_height()
+        scroll_offset = state['scroll_offset']
+        start_idx = scroll_offset
+        end_idx = min(len(keys), scroll_offset + visible_height)
+        
+        # Show scroll indicator at top if scrolled down
+        if scroll_offset > 0:
+            content.append((consts.UI_TEXT_DIM, f"  ↑ {scroll_offset} more above\n"))
+        
+        for i in range(start_idx, end_idx):
+            key = keys[i]
             # Priority: pending changes > committed values > env
             if key in changes:
                 value = changes[key]
@@ -496,6 +543,12 @@ def run_interactive_config(
             line = format_variable_line(key, value, status, selected, has_unsaved, saved_value)
             content.extend(line)
             content.append(("", "\n"))
+        
+        # Show scroll indicator at bottom if more items below
+        remaining = len(keys) - end_idx
+        if remaining > 0:
+            content.append((consts.UI_TEXT_DIM, f"  ↓ {remaining} more below"))
+        
         return content
     
     def validate_edit_value(text: str) -> tuple[bool, str | None, Any]:
@@ -795,10 +848,12 @@ def run_interactive_config(
     def _navigate_up():
         """Move selection up."""
         state['selected_index'] = max(0, state['selected_index'] - 1)
+        ensure_selected_visible()
     
     def _navigate_down():
         """Move selection down."""
         state['selected_index'] = min(len(keys) - 1, state['selected_index'] + 1)
+        ensure_selected_visible()
     
     # Arrow key navigation
     @kb.add('up', filter=is_not_edit_mode)
@@ -874,9 +929,6 @@ def run_interactive_config(
             event.app.layout = get_layout()
         else:
             event.app.exit()
-    
-    # Store app reference for use in callbacks
-    app_ref = [None]  # Use list to allow modification in nested scope
     
     # Ensure handler is detached at startup and whenever we exit edit mode
     def ensure_handler_detached():
