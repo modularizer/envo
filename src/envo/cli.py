@@ -201,9 +201,16 @@ def cmd_show(args):
         loading_spec[parse_spec_key("*")] = VariableSpec()
     
     try:
+        # If --spec is provided, use ONLY that spec (no auto-discovery)
+        # If not provided, use auto-discovery
+        if args.spec:
+            spec_arg = loading_spec if loading_spec else args.spec
+        else:
+            spec_arg = loading_spec if loading_spec else "auto"
+        
         env = Env(
             *(args.env_file or []),  # Empty = auto-discover
-            spec=loading_spec if loading_spec else ("auto" if not args.spec else args.spec),
+            spec=spec_arg,
             existing_env_priority="none" if args.no_system else "highest",
             export_to_environ=False,  # Don't export since we're just showing
         )

@@ -34,6 +34,96 @@ def _load_toml(path: Path) -> dict:
     return tomllib.loads(path.read_text()) or {}
 
 
+def _load_python_file(path: Path) -> dict[str, str | None]:
+    """Load a Python file and extract environment variables as a dict."""
+    import importlib.util
+    import sys
+    
+    # Load the module
+    spec = importlib.util.spec_from_file_location("_envo_temp_module", path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"Could not load Python file: {path}")
+    
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["_envo_temp_module"] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        # Clean up
+        if "_envo_temp_module" in sys.modules:
+            del sys.modules["_envo_temp_module"]
+    
+    # Look for common names: env, ENV, env_dict, ENV_DICT, or a dict
+    for attr_name in ['env', 'ENV', 'env_dict', 'ENV_DICT', 'env_vars', 'ENV_VARS']:
+        if hasattr(module, attr_name):
+            value = getattr(module, attr_name)
+            if isinstance(value, dict):
+                # Convert to string dict
+                result = {}
+                for k, v in value.items():
+                    if v is None:
+                        result[k] = None
+                    elif isinstance(v, bool):
+                        result[k] = str(v).lower()
+                    elif isinstance(v, (list, dict)):
+                        result[k] = json.dumps(v)
+                    else:
+                        result[k] = str(v)
+                return result
+    
+    # If no standard name found, return module's __dict__ filtered to public attrs
+    result = {}
+    for k, v in module.__dict__.items():
+        if not k.startswith('_') and isinstance(v, (str, int, float, bool, type(None))):
+            if v is None:
+                result[k] = None
+            elif isinstance(v, bool):
+                result[k] = str(v).lower()
+            else:
+                result[k] = str(v)
+    return result
+
+
+def _load_python_import(import_path: str) -> dict[str, str | None]:
+    """Load a Python module via import path and extract environment variables as a dict."""
+    import importlib
+    
+    try:
+        module = importlib.import_module(import_path)
+    except ImportError as e:
+        raise ValueError(f"Could not import module: {import_path}") from e
+    
+    # Look for common names: env, ENV, env_dict, ENV_DICT, or a dict
+    for attr_name in ['env', 'ENV', 'env_dict', 'ENV_DICT', 'env_vars', 'ENV_VARS']:
+        if hasattr(module, attr_name):
+            value = getattr(module, attr_name)
+            if isinstance(value, dict):
+                # Convert to string dict
+                result = {}
+                for k, v in value.items():
+                    if v is None:
+                        result[k] = None
+                    elif isinstance(v, bool):
+                        result[k] = str(v).lower()
+                    elif isinstance(v, (list, dict)):
+                        result[k] = json.dumps(v)
+                    else:
+                        result[k] = str(v)
+                return result
+    
+    # If no standard name found, return module's __dict__ filtered to public attrs
+    result = {}
+    for k, v in module.__dict__.items():
+        if not k.startswith('_') and isinstance(v, (str, int, float, bool, type(None))):
+            if v is None:
+                result[k] = None
+            elif isinstance(v, bool):
+                result[k] = str(v).lower()
+            else:
+                result[k] = str(v)
+    return result
+
+
 def _flatten_dict(d: dict, parent_key: str = '', sep: str = '_') -> dict[str, str | None]:
     """
     Flatten a nested dictionary into a flat dict with joined keys.
@@ -61,7 +151,9 @@ def _flatten_dict(d: dict, parent_key: str = '', sep: str = '_') -> dict[str, st
 def _get_file_type(path: Path) -> str:
     """Determine file type from extension."""
     suffix = path.suffix.lower()
-    if suffix in ('.yaml', '.yml'):
+    if suffix == '.py':
+        return 'python'
+    elif suffix in ('.yaml', '.yml'):
         return 'yaml'
     elif suffix == '.json':
         return 'json'
@@ -72,7 +164,7 @@ def _get_file_type(path: Path) -> str:
 
 
 
-def load_env_raw(*env_paths: str | Literal["os.environ"] | Path,
+def load_env_raw(*env_paths: str | Literal["os.environ"] | Path | dict,
                  existing_env_priority: Literal["none", "highest", "lowest"] | None = "highest",
                  cwd = None) -> dict[str, str | None]:
     """
@@ -131,10 +223,29 @@ def load_single_env_raw(
     Returns:
         Dictionary of environment variables (without ENVO_* special keys)
     """
+    if isinstance(env_path, dict):
+        return env_path
     if not env_path:
         return {}
     if env_path == "os.environ":
         return dict(os.environ)
+    
+    env_path_str = str(env_path)
+    
+    # Check if it's a Python import path (dots, no slashes, doesn't look like a file path)
+    is_import = ('.' in env_path_str and 
+                 '/' not in env_path_str and 
+                 '\\' not in env_path_str and
+                 not env_path_str.startswith('.') and
+                 not env_path_str.endswith('.py'))
+    
+    if is_import:
+        # Try as import path first
+        try:
+            return _load_python_import(env_path_str)
+        except (ValueError, ImportError):
+            # Fall through to try as file path
+            pass
     
     env_path = resolve_relative(env_path, cwd=cwd)
     if not env_path.exists():
@@ -152,7 +263,9 @@ def load_single_env_raw(
     # Load the file content
     file_type = _get_file_type(env_path)
     
-    if file_type == 'json':
+    if file_type == 'python':
+        current = _load_python_file(env_path)
+    elif file_type == 'json':
         current = _load_structured_file(env_path, json.loads, flatten)
     elif file_type == 'yaml':
         current = _load_structured_file(env_path, lambda s: _load_yaml(env_path), flatten)
@@ -164,9 +277,25 @@ def load_single_env_raw(
     # Process ENVO_EXTENDS (lower priority - load first, then current overrides)
     extends_path = current.get(consts.ENVO_EXTENDS)
     if extends_path:
-        # Resolve relative to the current file's directory
-        extends_resolved = resolve_relative(extends_path, cwd=env_path.parent)
-        base = load_single_env_raw(extends_resolved, cwd=env_path.parent, flatten=flatten, _loaded_files=_loaded_files)
+        extends_str = str(extends_path)
+        # Check if it's a Python import path
+        is_import = ('.' in extends_str and 
+                     '/' not in extends_str and 
+                     '\\' not in extends_str and
+                     not extends_str.startswith('.') and
+                     not extends_str.endswith('.py'))
+        if is_import:
+            # Try as import path
+            try:
+                base = _load_python_import(extends_str)
+            except (ValueError, ImportError):
+                # Fall back to file path
+                extends_resolved = resolve_relative(extends_path, cwd=env_path.parent)
+                base = load_single_env_raw(extends_resolved, cwd=env_path.parent, flatten=flatten, _loaded_files=_loaded_files)
+        else:
+            # Resolve relative to the current file's directory
+            extends_resolved = resolve_relative(extends_path, cwd=env_path.parent)
+            base = load_single_env_raw(extends_resolved, cwd=env_path.parent, flatten=flatten, _loaded_files=_loaded_files)
         # Current overrides base
         base.update(current)
         current = base
@@ -174,9 +303,25 @@ def load_single_env_raw(
     # Process ENVO_EXTENDED_BY (higher priority - load after, it overrides current)
     extended_by_path = current.get(consts.ENVO_EXTENDED_BY)
     if extended_by_path:
-        # Resolve relative to the current file's directory
-        extended_by_resolved = resolve_relative(extended_by_path, cwd=env_path.parent)
-        override = load_single_env_raw(extended_by_resolved, cwd=env_path.parent, flatten=flatten, _loaded_files=_loaded_files)
+        extended_by_str = str(extended_by_path)
+        # Check if it's a Python import path
+        is_import = ('.' in extended_by_str and 
+                     '/' not in extended_by_str and 
+                     '\\' not in extended_by_str and
+                     not extended_by_str.startswith('.') and
+                     not extended_by_str.endswith('.py'))
+        if is_import:
+            # Try as import path
+            try:
+                override = _load_python_import(extended_by_str)
+            except (ValueError, ImportError):
+                # Fall back to file path
+                extended_by_resolved = resolve_relative(extended_by_path, cwd=env_path.parent)
+                override = load_single_env_raw(extended_by_resolved, cwd=env_path.parent, flatten=flatten, _loaded_files=_loaded_files)
+        else:
+            # Resolve relative to the current file's directory
+            extended_by_resolved = resolve_relative(extended_by_path, cwd=env_path.parent)
+            override = load_single_env_raw(extended_by_resolved, cwd=env_path.parent, flatten=flatten, _loaded_files=_loaded_files)
         # Override takes precedence over current
         current.update(override)
     
@@ -632,6 +777,8 @@ def resolve_var_references(env_dict: dict[str, str | None]) -> dict[str, str | N
         for key, value in result.items():
             # Skip None values
             if value is None:
+                continue
+            if not isinstance(value, str):
                 continue
             
             # Skip values without any references

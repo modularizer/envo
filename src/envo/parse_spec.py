@@ -91,10 +91,92 @@ def _load_toml(path: Path) -> dict:
     return tomllib.loads(path.read_text()) or {}
 
 
+def _load_python_file(path: Path) -> dict | EnvSpec:
+    """Load a Python file and extract a dict or EnvSpec."""
+    import importlib.util
+    import sys
+    
+    # Load the module
+    spec = importlib.util.spec_from_file_location("_envo_temp_module", path)
+    if spec is None or spec.loader is None:
+        raise ValueError(f"Could not load Python file: {path}")
+    
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["_envo_temp_module"] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        # Clean up
+        if "_envo_temp_module" in sys.modules:
+            del sys.modules["_envo_temp_module"]
+    
+    # ALWAYS look for 'env' first, then access env.spec
+    if hasattr(module, 'env'):
+        env_obj = getattr(module, 'env')
+        # Check if env has a .spec attribute
+        if hasattr(env_obj, 'spec'):
+            spec_value = env_obj.spec
+            if isinstance(spec_value, EnvSpec):
+                # Return EnvSpec directly
+                return spec_value
+            elif isinstance(spec_value, dict):
+                return spec_value
+    
+    # Fallback: Look for spec directly (for backwards compatibility)
+    for attr_name in ['spec', 'env_spec', 'ENV_SPEC']:
+        if hasattr(module, attr_name):
+            value = getattr(module, attr_name)
+            if isinstance(value, EnvSpec):
+                # Return EnvSpec directly
+                return value
+            elif isinstance(value, dict):
+                return value
+    
+    # If no standard name found, return module's __dict__ filtered to public attrs
+    return {k: v for k, v in module.__dict__.items() if not k.startswith('_') and isinstance(v, (str, int, float, bool, type(None)))}
+
+
+def _load_python_import(import_path: str) -> dict | EnvSpec:
+    """Load a Python module via import path and extract a dict or EnvSpec."""
+    import importlib
+    
+    try:
+        module = importlib.import_module(import_path)
+    except ImportError as e:
+        raise ValueError(f"Could not import module: {import_path}") from e
+    
+    # ALWAYS look for 'env' first, then access env.spec
+    if hasattr(module, 'env'):
+        env_obj = getattr(module, 'env')
+        # Check if env has a .spec attribute
+        if hasattr(env_obj, 'spec'):
+            spec_value = env_obj.spec
+            if isinstance(spec_value, EnvSpec):
+                # Return EnvSpec directly
+                return spec_value
+            elif isinstance(spec_value, dict):
+                return spec_value
+    
+    # Fallback: Look for spec directly (for backwards compatibility)
+    for attr_name in ['spec', 'env_spec', 'ENV_SPEC']:
+        if hasattr(module, attr_name):
+            value = getattr(module, attr_name)
+            if isinstance(value, EnvSpec):
+                # Return EnvSpec directly
+                return value
+            elif isinstance(value, dict):
+                return value
+    
+    # If no standard name found, return module's __dict__ filtered to public attrs
+    return {k: v for k, v in module.__dict__.items() if not k.startswith('_') and isinstance(v, (str, int, float, bool, type(None)))}
+
+
 def _get_file_type(path: Path) -> str:
     """Determine file type from extension."""
     suffix = path.suffix.lower()
-    if suffix in ('.yaml', '.yml'):
+    if suffix == '.py':
+        return 'python'
+    elif suffix in ('.yaml', '.yml'):
         return 'yaml'
     elif suffix == '.json':
         return 'json'
@@ -675,13 +757,13 @@ def env_file_to_spec(
     cwd: str | Path | None = "find_project_root",
 ) -> EnvSpec:
     """
-    Parse an env/json/yaml/toml file and create an EnvSpec.
+    Parse an env/json/yaml/toml/python file or import path and create an EnvSpec.
     
     This is the main entry point for converting a config file to a spec.
     Automatically detects file type from extension.
     
     Args:
-        path: Path to the file (.env, .json, .yaml, .yml, .toml)
+        path: Path to the file (.env, .json, .yaml, .yml, .toml, .py) or Python import path (e.g., "envo.t.env")
         default_group: Default group for variables outside sections
         cwd: Working directory for relative paths
         
@@ -696,20 +778,61 @@ def env_file_to_spec(
         >>> spec = env_file_to_spec("config.yaml")
         >>> spec.DB_HOST
         VariableSpec(groups=('database',), ...)
+        
+        >>> spec = env_file_to_spec("envo.t.env")  # Python import path
+        >>> spec = env_file_to_spec("config.py")  # Python file
     """
     if default_group is None:
         default_group = consts.DEFAULT_GROUP
     
+    path_str = str(path)
+    
+    # Check if it's a Python import path (dots, no slashes, doesn't look like a file path)
+    is_import_path = ('.' in path_str and 
+                      '/' not in path_str and 
+                      '\\' not in path_str and
+                      not path_str.startswith('.') and
+                      not path_str.endswith('.py'))
+    
+    if is_import_path:
+        # Try as import path
+        try:
+            data = _load_python_import(path_str)
+            # If it's already an EnvSpec, return it directly
+            if isinstance(data, EnvSpec):
+                return data
+            # Otherwise parse it as a dict
+            variables = _parse_structured_spec(data, default_group)
+            spec_dict = {}
+            for var in variables:
+                spec_dict[var.name] = parsed_to_variable_spec(var)
+            return EnvSpec(spec_dict)
+        except (ValueError, ImportError):
+            # Fall through to try as file path
+            pass
+    
+    # Treat as file path
     cwd = find_project_root() if cwd == "find_project_root" else cwd
     path = Path(path).expanduser()
     if not path.is_absolute():
-        path = cwd / path
+        if cwd:
+            path = Path(cwd) / path
+        else:
+            path = Path.cwd() / path
+    
     if not path.exists():
         raise FileNotFoundError(f"File not found: {path}, {cwd=}")
     
     file_type = _get_file_type(path)
     
-    if file_type == 'json':
+    if file_type == 'python':
+        data = _load_python_file(path)
+        # If it's already an EnvSpec, return it directly
+        if isinstance(data, EnvSpec):
+            return data
+        # Otherwise parse it as a dict
+        variables = _parse_structured_spec(data, default_group)
+    elif file_type == 'json':
         data = json.loads(path.read_text())
         variables = _parse_structured_spec(data, default_group)
     elif file_type == 'yaml':

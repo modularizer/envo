@@ -369,9 +369,16 @@ def run_interactive_config(
         loading_spec[parse_spec_key("*")] = VariableSpec()
     
     try:
+        # If spec is provided, use ONLY that spec (no auto-discovery)
+        # If not provided, use auto-discovery
+        if spec:
+            spec_arg = loading_spec if loading_spec else spec
+        else:
+            spec_arg = loading_spec if loading_spec else "auto"
+        
         env = Env(
             *(env_file or []),
-            spec=loading_spec if loading_spec else ("auto" if not spec else spec),
+            spec=spec_arg,
             existing_env_priority="none" if no_system else "highest",
             export_to_environ=False,
         )
@@ -401,16 +408,28 @@ def run_interactive_config(
             keys = [key]
     elif grep:
         pattern = re.compile(grep, re.IGNORECASE if ignore_case else 0)
-        keys = [k for k in sorted(env.keys()) if pattern.search(k)]
+        # If spec is provided, search within spec keys; otherwise search all env keys
+        if spec_obj and not all_vars:
+            # Use spec_obj (original spec) not env.spec (which has catch-all)
+            search_keys = [k for k in spec_obj.keys() if isinstance(k, str)]
+        else:
+            search_keys = sorted(env.keys())
+        keys = [k for k in search_keys if pattern.search(k)]
         if not keys:
             subprint(f"YELLOW[No variables matching:] DIM[{_escape_brackets(grep)}]", file=sys.stderr)
             return 0
     else:
-        keys = sorted(env.keys())
+        # If spec is provided, use only spec keys; otherwise use all env keys
+        if spec_obj and not all_vars:
+            # Use spec_obj (original spec) not env.spec (which has catch-all pattern)
+            # Get only explicitly defined keys (string keys only, no patterns)
+            keys = list(spec_obj.list_explicit_keys())
+        else:
+            keys = sorted(env.keys())
     
-    # Filter to only explicitly specified keys (not fallback matches) unless --all
-    if spec_obj and not all_vars and not key:
-        explicit_keys = env.spec.filter_explicit(keys)
+    # Additional filtering for explicit keys if needed (for pattern-based specs)
+    if spec_obj and not all_vars and not key and not grep:
+        explicit_keys = spec_obj.filter_explicit(keys)
         if not explicit_keys and keys:
             subprint(f"DIM[No explicitly specified variables. Use --all to see all {len(keys)} variables.]", file=sys.stderr)
             return 0

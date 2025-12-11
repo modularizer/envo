@@ -107,6 +107,8 @@ def apply_all_substitutions(env_dict: dict[str, str | None]) -> dict[str, str | 
         # Skip None values
         if value is None:
             continue
+        if not isinstance(value, str):
+            continue
         if consts.PROJECT_ROOT_CHAR in value:
             result[key] = value.replace(consts.PROJECT_ROOT_CHAR, str(Path(project_root or Path.cwd()).expanduser().resolve()))
     return result
@@ -155,7 +157,7 @@ class Env(dict):
 
     def __init__(
         self,
-        *env_paths: str | Literal["os.environ"] | Path,
+        *env_paths: str | Literal["os.environ"] | Path | dict,
         raw: dict[str, str] | None = None,
         existing_env_priority: Literal["none", "highest", "lowest"] | None = "highest",
         cwd: str | Path | None = "find_project_root",
@@ -166,6 +168,7 @@ class Env(dict):
         docs: dict[str | re.Pattern, str] = None,
         defaults: dict[str | re.Pattern, str] = None,
         export_to_environ: bool = True,
+        export_extra_to_environ: bool = False,
         _groups: tuple | None = None,
         **spec_extra,
     ):
@@ -208,8 +211,10 @@ class Env(dict):
                 - Pattern: Accept only matching variables
             docs: Dictionary mapping variable names/patterns to documentation strings.
             defaults: Dictionary mapping variable names/patterns to default values.
-            export_to_environ: If True (default), set all resolved values back to
+            export_to_environ: If True (default), set resolved values back to
                 os.environ so they're available to subprocesses and other libraries.
+            export_extra_to_environ: If True, also export variables not in the spec.
+                If False (default), only export variables that are in the spec.
             _groups: Internal parameter for tracking group filtering.
             **spec_extra: Additional spec entries as keyword arguments.
 
@@ -235,19 +240,19 @@ class Env(dict):
         spec_defaults = {}
         
         if spec_file:
-            # Explicit spec file path
+            # Explicit spec file path (highest priority - no auto-discovery)
             from envo.parse_spec import env_file_to_spec
             parsed_spec = env_file_to_spec(spec_file, cwd=cwd)
+        elif isinstance(spec, (str, Path)) and spec != "auto":
+            # Spec is an explicit file path (not "auto") - use ONLY this spec
+            from envo.parse_spec import env_file_to_spec
+            parsed_spec = env_file_to_spec(spec, cwd=cwd)
         elif spec == "auto":
-            # Auto-discover spec file
+            # Auto-discover spec file (only when explicitly set to "auto")
             spec_path = find_default_spec(cwd)
             if spec_path:
                 from envo.parse_spec import env_file_to_spec
                 parsed_spec = env_file_to_spec(spec_path, cwd=cwd)
-        elif isinstance(spec, (str, Path)):
-            # Spec is a file path
-            from envo.parse_spec import env_file_to_spec
-            parsed_spec = env_file_to_spec(spec, cwd=cwd)
         elif isinstance(spec, EnvSpec):
             # Already parsed
             parsed_spec = spec
@@ -333,6 +338,10 @@ class Env(dict):
         self._parsed = {k: self[k] for k in self.keys()}
         super().__init__(self._parsed)
         
+        # Store export settings
+        self._export_to_environ_flag = export_to_environ
+        self._export_extra_to_environ = export_extra_to_environ
+        
         # Export resolved values back to os.environ
         if export_to_environ:
             self._export_to_environ()
@@ -344,13 +353,29 @@ class Env(dict):
 
     def _export_to_environ(self) -> None:
         """
-        Export all resolved raw string values to os.environ.
+        Export resolved raw string values to os.environ.
         
         This makes the loaded and resolved values available to subprocesses
         and other libraries that read from os.environ directly.
+        
+        Only exports variables that are in the spec, unless export_extra_to_environ is True.
         """
         import os
         for key, value in self.raw.items():
+            # Skip special ENVO keys
+            if key in consts.ENVO_SPECIAL_KEYS:
+                continue
+            
+            # Check if we should export this key
+            if not self._export_extra_to_environ:
+                # Only export if key is in spec (has explicit spec)
+                try:
+                    if not self.spec.has_explicit_spec(key):
+                        continue
+                except (AttributeError, KeyError):
+                    # If spec doesn't support has_explicit_spec or key not found, skip
+                    continue
+            
             if value is not None:
                 os.environ[key] = str(value)
             elif key in os.environ:

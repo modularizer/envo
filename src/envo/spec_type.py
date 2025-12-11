@@ -162,7 +162,7 @@ def parse_variable_spec(v: VariableSpecInput, default_variable_spec: VariableSpe
     elif isinstance(v, Callable):
         v2 = VariableSpec(coerce=v)
     else:
-        raise ValueError(f"Unknown spec: {v}")
+        v2 = VariableSpec(default=v)
     
     # Infer type from default if type is not set
     if v2.type is None and v2.default is not None and v2.default != "":
