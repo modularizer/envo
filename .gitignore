@@ -28,7 +28,7 @@ MANIFEST
 .venv
 venv/
 
-
+.idea/
 
 # Testing
 .pytest_cache/
