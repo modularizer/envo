@@ -116,102 +116,136 @@ def _get_value_style(value, highlighted: bool = False) -> str:
         return VALUE_COLOR_WHITE if VALUE_COLOR_WHITE else ""
 
 
-def format_variable_line(key: str, value, key_status: str, selected: bool = False) -> "FormattedText":
+def format_variable_line(key: str, value, key_status: str, selected: bool = False, has_unsaved_changes: bool = False, saved_value=None) -> "FormattedText":
     """Format a variable line for display in the list - matches envo show colors."""
     escaped_key = _escape_brackets(key)
     escaped_value = _escape_brackets(str(value)) if value is not None else ""
+    escaped_saved_value = _escape_brackets(str(saved_value)) if saved_value is not None else "(not set)"
     
     key_style = _get_key_style(key_status, highlighted=selected)
     value_style = _get_value_style(value, highlighted=selected)
+    saved_value_style = _get_value_style(saved_value, highlighted=selected)
+    
+    # Add italic for unsaved changes
+    italic_prefix = "italic " if has_unsaved_changes else ""
     
     if selected:
         # Selected item - highlight that works in both light and dark mode
-        parts = [
-            (f"bg:{HIGHLIGHT_BG_COLOR}", " "),
-        ]
+        parts = []
+        # Add asterisk for unsaved changes
+        if has_unsaved_changes:
+            parts.append((f"bg:{HIGHLIGHT_BG_COLOR} bold", "*"))
+        else:
+            parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", " "))
         # Key with style (using highlight-specific colors)
         if key_style:
-            parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {key_style}", escaped_key))
+            parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}{key_style}", escaped_key))
         else:
-            parts.append((f"bg:{HIGHLIGHT_BG_COLOR} bold", escaped_key))
-        parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", " = "))
-        # Value with style (using highlight-specific colors)
-        if value is not None:
-            if value_style:
-                parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {value_style}", escaped_value))
+            parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}bold", escaped_key))
+        parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}", " = "))
+        # Value display - show saved value in strikethrough if unsaved changes
+        if has_unsaved_changes:
+            # Show saved value in strikethrough using prompt_toolkit's strike style
+            strike_style = f"bg:{HIGHLIGHT_BG_COLOR} strike"
+            if saved_value_style:
+                strike_style = f"bg:{HIGHLIGHT_BG_COLOR} strike {saved_value_style}"
+            parts.append((strike_style, escaped_saved_value))
+            parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", " → "))
+            # Show new value
+            if value is not None:
+                if value_style:
+                    parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}{value_style}", escaped_value))
+                else:
+                    parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}", escaped_value))
             else:
-                parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", escaped_value))
+                parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {italic_prefix}{HIGHLIGHT_TEXT_COLOR_DIM}", "(not set)"))
         else:
-            parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {HIGHLIGHT_TEXT_COLOR_DIM}", "(not set)"))
+            # Normal value display
+            if value is not None:
+                if value_style:
+                    parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {value_style}", escaped_value))
+                else:
+                    parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", escaped_value))
+            else:
+                parts.append((f"bg:{HIGHLIGHT_BG_COLOR} {HIGHLIGHT_TEXT_COLOR_DIM}", "(not set)"))
         parts.append((f"bg:{HIGHLIGHT_BG_COLOR}", " "))
     else:
         # Normal item - use same colors as envo show
-        parts = [
-            ("", "  "),
-        ]
+        parts = []
+        # Add asterisk for unsaved changes
+        if has_unsaved_changes:
+            parts.append(("bold", "*"))
+            parts.append(("", " "))
+        else:
+            parts.append(("", "  "))
         # Key with style - match envo show termite colors
         if key_style:
-            parts.append((key_style, escaped_key))
+            parts.append((f"{italic_prefix}{key_style}", escaped_key))
         else:
-            parts.append(("ansicyan bold", escaped_key))
-        parts.append(("", " = "))
-        # Value with style - match envo show termite colors
-        if value is not None:
-            if value_style:
-                parts.append((value_style, escaped_value))
+            parts.append((f"{italic_prefix}ansicyan bold", escaped_key))
+        parts.append((f"{italic_prefix}", " = "))
+        # Value display - show saved value in strikethrough if unsaved changes
+        if has_unsaved_changes:
+            # Show saved value in strikethrough using prompt_toolkit's strike style
+            strike_style = "strike"
+            if saved_value_style:
+                strike_style = f"strike {saved_value_style}"
+            parts.append((strike_style, escaped_saved_value))
+            parts.append(("", " → "))
+            # Show new value
+            if value is not None:
+                if value_style:
+                    parts.append((f"{italic_prefix}{value_style}", escaped_value))
+                else:
+                    parts.append((f"{italic_prefix}", escaped_value))
             else:
-                parts.append(("", escaped_value))  # WHITE - default
+                parts.append((f"{italic_prefix}", "(not set)"))
         else:
-            parts.append(("", "(not set)"))  # DIM - no special color
+            # Normal value display
+            if value is not None:
+                if value_style:
+                    parts.append((value_style, escaped_value))
+                else:
+                    parts.append(("", escaped_value))  # WHITE - default
+            else:
+                parts.append(("", "(not set)"))  # DIM - no special color
     
     return parts
 
 
 def format_variable_detail(key: str, var_spec, current_value, raw_from_file: dict, spec) -> "FormattedText":
-    """Format detailed information about a variable for the edit view."""
+    """Format detailed information about a variable for the edit view - compact 3-line format."""
     parts = []
     
     if not key:
         return [(UI_TEXT_DIM, "Select a variable to view details")]
     
-    # Title
+    # Line 1: Key and docs on same line
     escaped_key = _escape_brackets(key)
-    parts.append(("bold", f"{escaped_key}"))
-    parts.append(("", "\n\n"))
+    parts.append(("bold", escaped_key))
+    docs = var_spec.docs if var_spec and var_spec.docs != "No help available" else None
+    if docs:
+        escaped_docs = _escape_brackets(docs)
+        parts.append((UI_TEXT_DIM, f"  {escaped_docs}"))
+    parts.append(("", "\n"))
     
-    # Documentation - concise
-    docs = var_spec.docs if var_spec and var_spec.docs != "No help available" else "No documentation available"
-    escaped_docs = _escape_brackets(docs)
-    parts.append((UI_TEXT_DIM, f"{escaped_docs}\n\n"))
-    
-    # Type, Current value, Default, and Status all on same line
+    # Line 2: Type, Current, Default
     var_type = var_spec.type if var_spec else None
     current_str = str(current_value) if current_value is not None else "(not set)"
-    escaped_current = _escape_brackets(current_str)
     default = var_spec.default if var_spec else None
     
-    # Type
+    line2_parts = []
     if var_type:
         type_str = var_type.__name__ if isinstance(var_type, type) else str(var_type)
-        escaped_type = _escape_brackets(type_str)
-        parts.append((UI_TEXT_DIM, "Type: "))
-        parts.append(("", escaped_type))
-        parts.append((UI_TEXT_DIM, "  |  "))
-    
-    # Current value
-    parts.append((UI_TEXT_DIM, "Current: "))
-    if current_value is None:
-        parts.append((UI_TEXT_DIM, escaped_current))
-    else:
-        parts.append(("", escaped_current))
-    
-    # Default value
+        line2_parts.append(f"type:{type_str}")
+    line2_parts.append(f"current:{current_str}")
     if default is not None:
-        escaped_default = _escape_brackets(str(default))
-        parts.append((UI_TEXT_DIM, "  |  Default: "))
-        parts.append(("", escaped_default))
+        line2_parts.append(f"default:{default}")
     
-    # Status - only show if not valid
+    parts.append((UI_TEXT_DIM, "  ".join(line2_parts)))
+    parts.append(("", "\n"))
+    
+    # Line 3: Status, Required, Validated
     key_status = KEY_STATUS_VALID
     has_explicit = spec and spec.has_explicit_spec(key) if spec else False
     if not has_explicit:
@@ -231,36 +265,24 @@ def format_variable_detail(key: str, var_spec, current_value, raw_from_file: dic
         except Exception:
             key_status = KEY_STATUS_INVALID
     
+    line3_parts = []
+    required = var_spec.required if var_spec else False
+    if required:
+        line3_parts.append("required")
+    has_validator = var_spec and var_spec.validator
+    if has_validator:
+        line3_parts.append("validated")
     if key_status != KEY_STATUS_VALID:
         status_text = {
-            KEY_STATUS_DEFAULT: "Using default",
-            KEY_STATUS_INVALID: "Invalid",
-            KEY_STATUS_EXTRA: "Extra (not in spec)",
-        }.get(key_status, "Unknown")
-        
-        status_style = _get_key_style(key_status)
-        escaped_status = _escape_brackets(status_text)
-        parts.append((UI_TEXT_DIM, "  |  Status: "))
-        if status_style:
-            parts.append((status_style, escaped_status))
-        else:
-            parts.append(("", escaped_status))
+            KEY_STATUS_DEFAULT: "using-default",
+            KEY_STATUS_INVALID: "invalid",
+            KEY_STATUS_EXTRA: "extra",
+        }.get(key_status, "")
+        if status_text:
+            line3_parts.append(status_text)
     
-    parts.append(("", "\n"))
-    
-    # Required and validation on same line
-    required = var_spec.required if var_spec else False
-    has_validator = var_spec and var_spec.validator
-    
-    info_parts = []
-    if required:
-        info_parts.append("Required")
-    if has_validator:
-        info_parts.append("Validated")
-    
-    if info_parts:
-        parts.append((UI_TEXT_DIM, "  ".join(info_parts)))
-        parts.append(("", "\n"))
+    if line3_parts:
+        parts.append((UI_TEXT_DIM, "  ".join(line3_parts)))
     
     return parts
 
@@ -440,8 +462,11 @@ def run_interactive_config(
         else:
             dst_path = Path.cwd() / ".env"
     
-    # Track changes
+    # Track changes (pending, unsaved)
     changes: dict[str, str | None] = {}
+    
+    # Track committed values (saved to file, for display after save)
+    committed_values: dict[str, str | None] = {}
     
     # Create the interactive application
     # Simple state - selected_index ONLY changes in arrow handlers
@@ -483,10 +508,22 @@ def run_interactive_config(
         """Get the current list content."""
         content = []
         for i, key in enumerate(keys):
-            value = changes.get(key, env.get(key))
+            # Priority: pending changes > committed values > env
+            if key in changes:
+                value = changes[key]
+            elif key in committed_values:
+                value = committed_values[key]
+            else:
+                value = env.get(key)
             status = get_variable_status(key)
             selected = (i == state['selected_index']) and not state['edit_mode']
-            line = format_variable_line(key, value, status, selected)
+            has_unsaved = key in changes
+            # For strikethrough, show the committed/env value as "saved"
+            if has_unsaved:
+                saved_value = committed_values.get(key, env.get(key))
+            else:
+                saved_value = None
+            line = format_variable_line(key, value, status, selected, has_unsaved, saved_value)
             content.extend(line)
             content.append(("", "\n"))
         return content
@@ -634,7 +671,13 @@ def run_interactive_config(
                 raw_text = edit_textarea.buffer.text
                 current_value = raw_text if raw_text else None
         else:
-            current_value = changes.get(key, env.get(key))
+            # Priority: pending changes > committed values > env
+            if key in changes:
+                current_value = changes[key]
+            elif key in committed_values:
+                current_value = committed_values[key]
+            else:
+                current_value = env.get(key)
         return format_variable_detail(key, var_spec, current_value, raw_from_file, spec_obj)
     
     list_control = FormattedTextControl(get_list_content)
@@ -647,7 +690,7 @@ def run_interactive_config(
     )
     
     detail_control = FormattedTextControl(get_detail_content)
-    detail_window = Window(content=detail_control, always_hide_cursor=True, wrap_lines=True, height=5)
+    detail_window = Window(content=detail_control, always_hide_cursor=True, wrap_lines=True, height=3)
     
     edit_textarea = TextArea(
         text="",
@@ -742,10 +785,8 @@ def run_interactive_config(
                         Window(height=1),
                         list_window,
                         Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, "─" * 80)])),
-                        Window(height=1),
                         detail_window,
-                        Window(height=1),
-                        Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, "↑↓ Navigate  Enter Edit  Ctrl+S Save  Ctrl+Q Quit")])),
+                        Window(height=1, content=FormattedTextControl(lambda: [(UI_TEXT_DIM, "↑↓ Navigate  Enter Edit  ^S Save  ^Q Quit")])),
                     ]),
                     focused_element=list_window,
                 )
@@ -911,32 +952,45 @@ def run_interactive_config(
                 app_ref[0].invalidate()
         return on_text_changed
     
+    # Track saved changes for display after exit
+    saved_changes: dict[str, tuple] = {}  # key -> (old_value, new_value)
+    
+    # Track save errors to display
+    save_error: list[str] = []
+    
     def save_changes(event):
         if not state['edit_mode']:
-            # Save all changes to file
+            # Save only changed variables to file
             if changes:
-                # Merge changes with existing env
+                # Only include changed keys and keys already in file
                 env_data = {}
-                for key in keys:
+                for key in raw_from_file:
                     if key in changes:
                         env_data[key] = changes[key]
-                    elif key in raw_from_file:
-                        env_data[key] = raw_from_file[key]
                     else:
-                        # Use current value from env
-                        env_data[key] = env.raw.get(key)
+                        env_data[key] = raw_from_file[key]
+                # Add any changed keys not already in file
+                for key in changes:
+                    if key not in env_data:
+                        env_data[key] = changes[key]
                 
                 try:
                     save_env_file(env_data, dst_path, Path(spec_path) if spec_path else None)
-                    # Show success message (we'll need to handle this differently in TUI)
+                    # Store saved changes for display after exit
+                    for key, new_val in changes.items():
+                        old_val = committed_values.get(key, env.get(key))
+                        saved_changes[key] = (old_val, new_val)
+                        # Update raw_from_file so subsequent saves know this is now in file
+                        raw_from_file[key] = str(new_val) if new_val is not None else ""
+                        # Update committed_values so the display shows the new value
+                        committed_values[key] = new_val
                     changes.clear()
-                    # Exit to show message
-                    event.app.exit(result="saved")
+                    # Stay in TUI, don't exit
+                    event.app.invalidate()
                 except Exception as e:
-                    # Exit to show error
-                    event.app.exit(result=f"error: {e}")
-            else:
-                event.app.exit(result="no_changes")
+                    save_error.clear()
+                    save_error.append(str(e))
+                    event.app.invalidate()
     
     @kb.add('c-s')
     def save_changes_ctrl_s(event):
@@ -970,50 +1024,79 @@ def run_interactive_config(
     # Store app reference for validation callback
     app_ref[0] = app
 
+    # Function to clear TUI output and show saved changes
+    def clear_and_show_saved():
+        # Move cursor up to clear TUI output - use ED (Erase in Display) to clear from cursor to end
+        # First, count approximate lines used by TUI (header + blank + list + separator + blank + detail + blank + footer)
+        tui_lines = 2 + len(keys) + 1 + 3 + 1  # header + blank + list + separator + detail + help
+        # Move up and clear each line
+        sys.stdout.write(f"\x1b[{tui_lines}A")  # Move cursor up
+        sys.stdout.write("\x1b[J")  # Clear from cursor to end of screen
+        sys.stdout.flush()
+        
+        # Show saved changes if any
+        if saved_changes:
+            subprint(f"BOLD+GREEN[Saved to {_escape_brackets(str(dst_path))}:]")
+            for key, (old_val, new_val) in sorted(saved_changes.items()):
+                old_str = str(old_val) if old_val is not None else "(not set)"
+                new_str = str(new_val) if new_val is not None else "(not set)"
+                subprint(f"  CYAN[{_escape_brackets(key)}] = DIM[{_escape_brackets(old_str)}] → GREEN[{_escape_brackets(new_str)}]")
+    
+    result = None
+    error_result = None
+    
     try:
-        # Force enable SGR mouse mode and disable alternate scroll mode
-        # This must happen AFTER app is created but BEFORE run()
-        # These escape sequences tell the terminal to:
-        # - Enable SGR extended mouse mode (\x1b[?1006h)
-        # - Enable any-event mouse tracking (\x1b[?1003h)
-        # - Disable alternate scroll mode (\x1b[?1007l) - prevents scroll->arrow conversion
-
         result = app.run()
-
-        # Handle save result
-        if result == "saved":
-            subprint(f"BOLD+GREEN[Saved changes to {_escape_brackets(str(dst_path))}]")
-        elif result and result.startswith("error:"):
-            error_msg = result.split(":", 1)[1]
-            subprint(f"BOLD+RED[Error saving file:] {_escape_brackets(error_msg)}", file=sys.stderr)
-            return 1
-        elif result == "no_changes":
-            subprint("DIM[No changes to save]")
-
     except KeyboardInterrupt:
         pass
     except Exception as e:
-        # If there's an error during rendering or app execution, exit gracefully
-        subprint(f"BOLD+RED[Error:] {_escape_brackets(str(e))}", file=sys.stderr)
+        error_result = str(e)
+    
+    # Clear TUI output on any exit
+    clear_and_show_saved()
+    
+    # Handle results after clearing
+    if error_result:
+        subprint(f"BOLD+RED[Error:] {_escape_brackets(error_result)}", file=sys.stderr)
+        return 1
+    
+    if result and result.startswith("error:"):
+        error_msg = result.split(":", 1)[1]
+        subprint(f"BOLD+RED[Error saving file:] {_escape_brackets(error_msg)}", file=sys.stderr)
         return 1
 
     # Save on exit if there are unsaved changes
     if changes:
-        print()  # New line after TUI
-        response = input(f"Save {len(changes)} change(s) to {dst_path}? [y/N]: ")
+        try:
+            response = input(f"Save {len(changes)} change(s) to {dst_path}? [y/N]: ")
+        except KeyboardInterrupt:
+            print()  # New line after ^C
+            return 0
         if response.lower() == 'y':
+            # Only include changed keys and keys already in file
             env_data = {}
-            for key in keys:
+            for key in raw_from_file:
                 if key in changes:
                     env_data[key] = changes[key]
-                elif key in raw_from_file:
-                    env_data[key] = raw_from_file[key]
                 else:
-                    env_data[key] = env.raw.get(key)
+                    env_data[key] = raw_from_file[key]
+            # Add any changed keys not already in file
+            for key in changes:
+                if key not in env_data:
+                    env_data[key] = changes[key]
             
             try:
                 save_env_file(env_data, dst_path, Path(spec_path) if spec_path else None)
-                subprint(f"BOLD+GREEN[Saved changes to {_escape_brackets(str(dst_path))}]")
+                # Store and display saved changes
+                for key, new_val in changes.items():
+                    old_val = env.get(key)
+                    saved_changes[key] = (old_val, new_val)
+                # Display saved changes
+                subprint(f"BOLD+GREEN[Saved to {_escape_brackets(str(dst_path))}:]")
+                for key, (old_val, new_val) in sorted(saved_changes.items()):
+                    old_str = str(old_val) if old_val is not None else "(not set)"
+                    new_str = str(new_val) if new_val is not None else "(not set)"
+                    subprint(f"  CYAN[{_escape_brackets(key)}] = DIM[{_escape_brackets(old_str)}] → GREEN[{_escape_brackets(new_str)}]")
             except Exception as e:
                 subprint(f"BOLD+RED[Error saving file:] {_escape_brackets(str(e))}", file=sys.stderr)
                 return 1
