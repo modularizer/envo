@@ -7,6 +7,7 @@ Commands:
 """
 
 import argparse
+import os
 import re
 import sys
 
@@ -125,6 +126,22 @@ def cmd_show(args):
     from envo.load import load_single_env_raw
     from envo.spec_type import parse_spec
     
+    # FIRST: Load raw env values and sync ENVO_* settings to os.environ
+    # This MUST happen before anything else accesses consts
+    raw_from_file = {}
+    if args.env_file:
+        for ef in args.env_file:
+            raw_from_file.update(load_single_env_raw(ef) or {})
+    else:
+        default_env = find_default_env()
+        if default_env:
+            raw_from_file = load_single_env_raw(str(default_env)) or {}
+    
+    # Sync ENVO_* display settings to os.environ so consts picks them up
+    for env_key, value in raw_from_file.items():
+        if env_key.startswith("ENVO_") and value is not None:
+            os.environ[env_key] = str(value)
+    
     # Load spec first (for validation checking)
     spec = None
     spec_path = args.spec
@@ -235,17 +252,6 @@ def cmd_show(args):
             subprint(f"DIM[No explicitly specified variables. Use --all to see all {len(keys)} variables.]", file=sys.stderr)
             return 0
         keys = explicit_keys
-    
-    # Get the raw values before spec defaults were applied (to detect defaults)
-    from envo.load import load_single_env_raw
-    raw_from_file = {}
-    if args.env_file:
-        for ef in args.env_file:
-            raw_from_file.update(load_single_env_raw(ef) or {})
-    else:
-        default_env = find_default_env()
-        if default_env:
-            raw_from_file = load_single_env_raw(str(default_env)) or {}
     
     # Print output
     is_glob_pattern = args.key and ('*' in args.key or '?' in args.key)

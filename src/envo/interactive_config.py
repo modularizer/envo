@@ -183,7 +183,7 @@ def format_variable_line(key: str, value, key_status: str, selected: bool = Fals
     return parts
 
 
-def format_variable_detail(key: str, var_spec, current_value, raw_from_file: dict, spec) -> "FormattedText":
+def format_variable_detail(key: str, var_spec, current_value, env: dict, spec) -> "FormattedText":
     """Format detailed information about a variable for the edit view - compact 3-line format."""
     parts = []
     
@@ -220,7 +220,7 @@ def format_variable_detail(key: str, var_spec, current_value, raw_from_file: dic
     has_explicit = spec and spec.has_explicit_spec(key) if spec else False
     if not has_explicit:
         key_status = consts.KEY_STATUS_EXTRA
-    elif key not in raw_from_file or raw_from_file.get(key) is None:
+    elif key not in env or env.get(key) is None:
         key_status = consts.KEY_STATUS_DEFAULT
     else:
         try:
@@ -326,7 +326,17 @@ def run_interactive_config(
     dst: Optional[str] = None,
 ):
     """Run the interactive configuration editor."""
+    import os
+    from envo.env import Env
+    env = Env()
     
+    # Sync ENVO_* settings from loaded env to os.environ so consts picks them up
+    for env_key in env.keys():
+        if env_key.startswith("ENVO_"):
+            value = env.get(env_key)
+            if value is not None:
+                os.environ[env_key] = str(value)
+
     # Load spec
     spec_obj = None
     spec_path = spec
@@ -410,16 +420,6 @@ def run_interactive_config(
         subprint("YELLOW[No variables to configure]", file=sys.stderr)
         return 0
     
-    # Get raw values from file
-    raw_from_file = {}
-    if env_file:
-        for ef in env_file:
-            raw_from_file.update(load_single_env_raw(ef) or {})
-    else:
-        default_env = find_default_env()
-        if default_env:
-            raw_from_file = load_single_env_raw(str(default_env)) or {}
-    
     # Determine destination file
     if dst:
         dst_path = Path(dst).expanduser()
@@ -494,7 +494,7 @@ def run_interactive_config(
         has_explicit = spec_obj and spec_obj.has_explicit_spec(key) if spec_obj else False
         if not has_explicit:
             return consts.KEY_STATUS_EXTRA
-        elif key not in raw_from_file or raw_from_file.get(key) is None:
+        elif env.get(key) is None:
             return consts.KEY_STATUS_DEFAULT
         else:
             try:
@@ -701,7 +701,7 @@ def run_interactive_config(
                 current_value = committed_values[key]
             else:
                 current_value = env.get(key)
-        return format_variable_detail(key, var_spec, current_value, raw_from_file, spec_obj)
+        return format_variable_detail(key, var_spec, current_value, env, spec_obj)
     
     list_control = FormattedTextControl(get_list_content)
     # Disable mouse scroll - we only want arrow key navigation
@@ -846,13 +846,23 @@ def run_interactive_config(
         pass
     
     def _navigate_up():
-        """Move selection up."""
-        state['selected_index'] = max(0, state['selected_index'] - 1)
+        """Move selection up, with optional wrap-around."""
+        if state['selected_index'] == 0:
+            if consts.CYCLE_ENDLESSLY:
+                state['selected_index'] = len(keys) - 1
+            # else: stay at 0
+        else:
+            state['selected_index'] -= 1
         ensure_selected_visible()
     
     def _navigate_down():
-        """Move selection down."""
-        state['selected_index'] = min(len(keys) - 1, state['selected_index'] + 1)
+        """Move selection down, with optional wrap-around."""
+        if state['selected_index'] == len(keys) - 1:
+            if consts.CYCLE_ENDLESSLY:
+                state['selected_index'] = 0
+            # else: stay at last
+        else:
+            state['selected_index'] += 1
         ensure_selected_visible()
     
     # Arrow key navigation
@@ -986,26 +996,34 @@ def run_interactive_config(
             if changes:
                 # Only include changed keys and keys already in file
                 env_data = {}
-                for key in raw_from_file:
+                for key in env:
                     if key in changes:
                         env_data[key] = changes[key]
                     else:
-                        env_data[key] = raw_from_file[key]
+                        env_data[key] = env[key]
                 # Add any changed keys not already in file
                 for key in changes:
                     if key not in env_data:
                         env_data[key] = changes[key]
                 
                 try:
+                    import os
                     save_env_file(env_data, dst_path, Path(spec_path) if spec_path else None)
                     # Store saved changes for display after exit
                     for key, new_val in changes.items():
                         old_val = committed_values.get(key, env.get(key))
                         saved_changes[key] = (old_val, new_val)
-                        # Update raw_from_file so subsequent saves know this is now in file
-                        raw_from_file[key] = str(new_val) if new_val is not None else ""
+                        # Update env so subsequent saves know this is now in file
+                        env[key] = str(new_val) if new_val is not None else ""
                         # Update committed_values so the display shows the new value
                         committed_values[key] = new_val
+                        # Sync ENVO_* settings to os.environ so consts picks them up
+                        if key.startswith("ENVO_"):
+                            if new_val is not None:
+                                os.environ[key] = str(new_val)
+                            elif key in os.environ:
+                                del os.environ[key]
+                    # Clear consts cache so it re-reads ENVO_* values from os.environ
                     changes.clear()
                     # Stay in TUI, don't exit
                     event.app.invalidate()
@@ -1097,11 +1115,11 @@ def run_interactive_config(
         if response.lower() == 'y':
             # Only include changed keys and keys already in file
             env_data = {}
-            for key in raw_from_file:
+            for key in env:
                 if key in changes:
                     env_data[key] = changes[key]
                 else:
-                    env_data[key] = raw_from_file[key]
+                    env_data[key] = env[key]
             # Add any changed keys not already in file
             for key in changes:
                 if key not in env_data:

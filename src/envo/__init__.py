@@ -50,7 +50,6 @@ from .consts import (
     get_display_defaults,
     get_env_key,
     is_immutable,
-    clear_cache,
 )
 
 

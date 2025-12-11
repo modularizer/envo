@@ -171,14 +171,18 @@ _DISPLAY_DEFAULTS: dict[str, Any] = {
     "UI_VALID_PREFIX": "✓ Valid",
     "UI_INVALID_PREFIX": "✗ Invalid",
     "UI_CHANGE_ARROW": " → ",
+    
+    # =========================================================================
+    # Navigation Behavior
+    # =========================================================================
+    
+    # If true, navigating up from first item wraps to last, and vice versa
+    "CYCLE_ENDLESSLY": False,
 }
 
 
 # Combined defaults for __getattr__ lookup
 _DEFAULTS: dict[str, Any] = {**_PARSING_DEFAULTS, **_DISPLAY_DEFAULTS}
-
-# Cache for loaded values (avoids repeated os.environ lookups)
-_cached_values: dict[str, Any] = {}
 
 # Track if bootstrap has been done
 _bootstrap_done = False
@@ -242,6 +246,10 @@ def _coerce_config_value(name: str, value: str) -> Any:
     if isinstance(default, set):
         return set(_parse_collection_value(value))
     
+    # Handle bool types FIRST (bool is subclass of int, so must check before int)
+    if isinstance(default, bool):
+        return value.lower() in _PARSING_DEFAULTS["BOOL_TRUE_VALUES"]
+    
     # Handle int types
     if isinstance(default, int):
         try:
@@ -256,38 +264,10 @@ def _coerce_config_value(name: str, value: str) -> Any:
         except ValueError:
             return default
     
-    # Handle bool types
-    if isinstance(default, bool):
-        return value.lower() in ("true", "1", "yes", "on", "y", "enable", "enabled")
-    
     # Default: return as string
     return value
 
 
-def _bootstrap_parsing_settings():
-    """
-    Bootstrap phase: Load parsing-related settings from os.environ.
-    
-    This is called automatically on first access to any configurable constant.
-    It loads ONLY the parsing-related settings, which must be available before
-    any .env file can be properly parsed.
-    
-    These settings can be set in the shell environment:
-        export ENVO_DEFAULT_GROUP=mygroup
-        export ENVO_BOOL_TRUE_VALUES=true,yes,1,on
-    """
-    global _bootstrap_done
-    
-    if _bootstrap_done:
-        return
-    
-    # Load parsing-related settings from os.environ
-    for name in _PARSING_DEFAULTS:
-        env_key = f"ENVO_{name}"
-        if env_key in os.environ:
-            _cached_values[name] = _coerce_config_value(name, os.environ[env_key])
-    
-    _bootstrap_done = True
 
 
 def __getattr__(name: str) -> Any:
@@ -299,20 +279,12 @@ def __getattr__(name: str) -> Any:
     """
     if name.startswith("_"):
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    
-    # Ensure bootstrap is done
-    _bootstrap_parsing_settings()
-    
-    # Check cache first
-    if name in _cached_values:
-        return _cached_values[name]
-    
+
     # Check if it's a known configurable constant
     if name in _DEFAULTS:
         env_key = f"ENVO_{name}"
         if env_key in os.environ:
             value = _coerce_config_value(name, os.environ[env_key])
-            _cached_values[name] = value
             return value
         return _DEFAULTS[name]
     
@@ -361,8 +333,3 @@ def is_immutable(name: str) -> bool:
                     "ENVO_EXTENDED_BY", "ENVO_SPECIAL_KEYS")
 
 
-def clear_cache():
-    """Clear the cached values, forcing re-read from os.environ on next access."""
-    global _bootstrap_done
-    _cached_values.clear()
-    _bootstrap_done = False
