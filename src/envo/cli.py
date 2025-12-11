@@ -376,9 +376,11 @@ def cmd_validate(args):
     
     # Find all referenced variables (used as $VAR in values) - check BEFORE resolution
     referenced_vars = set()
+    ref_char = re.escape(consts.REF_CHAR)
+    ref_pattern = rf'{ref_char}([A-Za-z_][A-Za-z0-9_]*)'
     for value in raw_values_unresolved.values():
-        if value and '$' in value:
-            referenced_vars.update(re.findall(r'\$([A-Za-z_][A-Za-z0-9_]*)', value))
+        if value and consts.REF_CHAR in value:
+            referenced_vars.update(re.findall(ref_pattern, value))
     
     # Check for missing required keys
     for key in spec.list_required():

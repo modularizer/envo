@@ -259,10 +259,357 @@ def resolve_relative(x: str | Path, cwd: str | Path | None = None) -> Path:
     return (cwd / x).resolve()
 
 
+def _is_truthy(value: str | None) -> bool:
+    """
+    Check if a string value is truthy for logical operations.
+    
+    Returns False for: None, empty string, false-like values, null-like values.
+    Returns True for everything else.
+    """
+    if value is None or value == '':
+        return False
+    lower = value.lower().strip()
+    if lower in consts.BOOL_FALSE_VALUES:
+        return False
+    if lower in consts.NULL_VALUES:
+        return False
+    return True
+
+
+def _find_operator(expr: str, op: str, start: int = 0) -> int:
+    """
+    Find the first occurrence of an operator at parenthesis depth 0.
+    
+    Args:
+        expr: Expression string to search
+        op: Operator to find
+        start: Starting position
+        
+    Returns:
+        Position of operator, or -1 if not found
+    """
+    depth = 0
+    i = start
+    op_len = len(op)
+    while i <= len(expr) - op_len:
+        c = expr[i]
+        if c == '(':
+            depth += 1
+        elif c == ')':
+            depth -= 1
+        elif depth == 0 and expr[i:i + op_len] == op:
+            # Make sure we don't match == when looking for =
+            if op == '=' and i + 1 < len(expr) and expr[i + 1] == '=':
+                i += 1
+                continue
+            if op == '!' and i + 1 < len(expr) and expr[i + 1] == '=':
+                i += 1
+                continue
+            return i
+        i += 1
+    return -1
+
+
+def _rfind_operator(expr: str, op: str) -> int:
+    """
+    Find the last occurrence of an operator at parenthesis depth 0.
+    
+    Args:
+        expr: Expression string to search
+        op: Operator to find
+        
+    Returns:
+        Position of operator, or -1 if not found
+    """
+    depth = 0
+    op_len = len(op)
+    i = len(expr) - op_len
+    while i >= 0:
+        c = expr[i]
+        if c == ')':
+            depth += 1
+        elif c == '(':
+            depth -= 1
+        elif depth == 0 and expr[i:i + op_len] == op:
+            # Make sure we don't match == when looking for single operators
+            if op == '=' and i + 1 < len(expr) and expr[i + 1] == '=':
+                i -= 1
+                continue
+            if op == '!' and i + 1 < len(expr) and expr[i + 1] == '=':
+                i -= 1
+                continue
+            return i
+        i -= 1
+    return -1
+
+
+def _try_numeric(value: str) -> int | float | None:
+    """Try to parse a string as a number."""
+    if not value:
+        return None
+    try:
+        # Try int first
+        return int(value.replace('_', ''))
+    except ValueError:
+        try:
+            return float(value.replace('_', ''))
+        except ValueError:
+            return None
+
+
+def _evaluate_expression(expr: str, env_dict: dict[str, str | None], ref_char: str) -> str:
+    """
+    Evaluate an expression with logical and arithmetic operators.
+    
+    Supports (in order of precedence, lowest to highest):
+    - Ternary: $VAR?true_val:false_val
+    - OR: $VAR||$OTHER
+    - AND: $VAR&&$OTHER
+    - Inequality: $VAR!=$OTHER or $VAR!=literal
+    - Equality: $VAR==$OTHER or $VAR==literal
+    - Addition/Subtraction: $A+$B, $A-$B
+    - Multiplication: $A*$B
+    - NOT: !$VAR or !expr
+    - Parentheses: (expr)
+    - Variable reference: $VAR
+    - Literal value
+    
+    Note: Single | and / are NOT used as operators to avoid conflicts with paths.
+    
+    Args:
+        expr: Expression to evaluate
+        env_dict: Dictionary of resolved environment variables
+        ref_char: Character used for variable references (default: $)
+        
+    Returns:
+        Evaluated string result
+    """
+    import re
+    expr = expr.strip()
+    if not expr:
+        return ''
+    
+    # 1. Ternary operator: condition?true_val:false_val
+    q_pos = _find_operator(expr, '?')
+    if q_pos > 0:
+        # Find matching colon at same depth
+        c_pos = _find_operator(expr, ':', q_pos + 1)
+        if c_pos > q_pos:
+            condition = expr[:q_pos]
+            true_val = expr[q_pos + 1:c_pos]
+            false_val = expr[c_pos + 1:]
+            
+            cond_result = _evaluate_expression(condition, env_dict, ref_char)
+            if _is_truthy(cond_result):
+                return _evaluate_expression(true_val, env_dict, ref_char)
+            else:
+                return _evaluate_expression(false_val, env_dict, ref_char)
+    
+    # 2. OR operator (use || to avoid conflict with path separators)
+    pos = _rfind_operator(expr, '||')
+    if pos >= 0:
+        left = expr[:pos]
+        right = expr[pos + 2:]
+        left_val = _evaluate_expression(left, env_dict, ref_char)
+        right_val = _evaluate_expression(right, env_dict, ref_char)
+        return 'true' if (_is_truthy(left_val) or _is_truthy(right_val)) else 'false'
+    
+    # 3. AND operator (use && for consistency with ||)
+    pos = _rfind_operator(expr, '&&')
+    if pos >= 0:
+        left = expr[:pos]
+        right = expr[pos + 2:]
+        left_val = _evaluate_expression(left, env_dict, ref_char)
+        right_val = _evaluate_expression(right, env_dict, ref_char)
+        return 'true' if (_is_truthy(left_val) and _is_truthy(right_val)) else 'false'
+    
+    # 4. Inequality operator
+    pos = _find_operator(expr, '!=')
+    if pos >= 0:
+        left = expr[:pos]
+        right = expr[pos + 2:]
+        left_val = _evaluate_expression(left, env_dict, ref_char)
+        right_val = _evaluate_expression(right, env_dict, ref_char)
+        return 'true' if left_val != right_val else 'false'
+    
+    # 5. Equality operator
+    pos = _find_operator(expr, '==')
+    if pos >= 0:
+        left = expr[:pos]
+        right = expr[pos + 2:]
+        left_val = _evaluate_expression(left, env_dict, ref_char)
+        right_val = _evaluate_expression(right, env_dict, ref_char)
+        return 'true' if left_val == right_val else 'false'
+    
+    # 6. Addition and Subtraction (right-to-left for left associativity)
+    # Check subtraction first, but be careful not to match negative numbers
+    pos = _rfind_operator(expr, '-')
+    if pos > 0:  # Must be > 0 to not match unary minus at start
+        left = expr[:pos]
+        right = expr[pos + 1:]
+        left_val = _evaluate_expression(left, env_dict, ref_char)
+        right_val = _evaluate_expression(right, env_dict, ref_char)
+        left_num = _try_numeric(left_val)
+        right_num = _try_numeric(right_val)
+        if left_num is not None and right_num is not None:
+            result = left_num - right_num
+            return str(int(result)) if isinstance(result, float) and result.is_integer() else str(result)
+    
+    pos = _rfind_operator(expr, '+')
+    if pos >= 0:
+        left = expr[:pos]
+        right = expr[pos + 1:]
+        left_val = _evaluate_expression(left, env_dict, ref_char)
+        right_val = _evaluate_expression(right, env_dict, ref_char)
+        left_num = _try_numeric(left_val)
+        right_num = _try_numeric(right_val)
+        if left_num is not None and right_num is not None:
+            # Numeric addition
+            result = left_num + right_num
+            return str(int(result)) if isinstance(result, float) and result.is_integer() else str(result)
+        else:
+            # String concatenation
+            return left_val + right_val
+    
+    # 7. Multiplication (no division to avoid conflict with paths)
+    pos = _rfind_operator(expr, '*')
+    if pos >= 0:
+        left = expr[:pos]
+        right = expr[pos + 1:]
+        left_val = _evaluate_expression(left, env_dict, ref_char)
+        right_val = _evaluate_expression(right, env_dict, ref_char)
+        left_num = _try_numeric(left_val)
+        right_num = _try_numeric(right_val)
+        if left_num is not None and right_num is not None:
+            result = left_num * right_num
+            return str(int(result)) if isinstance(result, float) and result.is_integer() else str(result)
+        # If not both numeric, return concatenated (fallback behavior)
+        return left_val + right_val
+    
+    # 8. NOT operator (prefix)
+    if expr.startswith('!'):
+        inner = expr[1:]
+        inner_val = _evaluate_expression(inner, env_dict, ref_char)
+        return 'false' if _is_truthy(inner_val) else 'true'
+    
+    # 9. Parentheses
+    if expr.startswith('(') and expr.endswith(')'):
+        # Verify these are matching parentheses by checking depth
+        depth = 0
+        matched = False
+        for i, c in enumerate(expr):
+            if c == '(':
+                depth += 1
+            elif c == ')':
+                depth -= 1
+                if depth == 0:
+                    # If we reach depth 0 at the last character, it's a wrapper
+                    if i == len(expr) - 1:
+                        matched = True
+                    break
+        if matched:
+            # Parens wrap the whole expression
+            return _evaluate_expression(expr[1:-1], env_dict, ref_char)
+    
+    # 10. Variable reference
+    if expr.startswith(ref_char):
+        var_name = expr[len(ref_char):]
+        # Extract just the variable name (alphanumeric + underscore)
+        match = re.match(r'^([A-Za-z_][A-Za-z0-9_]*)', var_name)
+        if match:
+            var_name = match.group(1)
+            value = env_dict.get(var_name) or ''
+            # If the value is still a variable reference, try to resolve it recursively
+            if value and value.startswith(ref_char) and not _has_expression_operators(value, ref_char):
+                # Simple variable reference - resolve it
+                import re as re_module
+                ref_escaped = re_module.escape(ref_char)
+                simple_pattern = rf'{ref_escaped}([A-Za-z_][A-Za-z0-9_]*)'
+                def replace_var(match):
+                    ref_var_name = match.group(1)
+                    if ref_var_name == var_name:
+                        return match.group(0)  # Avoid self-reference
+                    ref_val = env_dict.get(ref_var_name)
+                    return ref_val if ref_val is not None else match.group(0)
+                value = re_module.sub(simple_pattern, replace_var, value)
+            return value
+    
+    # 11. Literal value - strip surrounding quotes if present
+    expr = expr.strip()
+    if (expr.startswith('"') and expr.endswith('"')) or \
+       (expr.startswith("'") and expr.endswith("'")):
+        return expr[1:-1]
+    return expr
+
+
+def _has_variable_reference(value: str, ref_char: str) -> bool:
+    """Check if a value contains at least one variable reference."""
+    import re
+    ref_escaped = re.escape(ref_char)
+    pattern = rf'{ref_escaped}[A-Za-z_][A-Za-z0-9_]*'
+    return bool(re.search(pattern, value))
+
+
+def _has_expression_operators(value: str, ref_char: str = None) -> bool:
+    """
+    Check if a value contains expression operators that need evaluation.
+    
+    IMPORTANT: Only returns True if there's at least one variable reference.
+    We don't evaluate pure literals like "1+2" or "true||false".
+    """
+    if ref_char is None:
+        ref_char = consts.REF_CHAR
+    
+    # First check: must have at least one variable reference
+    if not _has_variable_reference(value, ref_char):
+        return False
+    
+    # These operators indicate an expression (not just simple $VAR substitution)
+    # Note: we use || for OR to avoid conflict with | in paths
+    # Note: no division operator to avoid conflict with / in paths
+    if '||' in value or '&&' in value or '==' in value or '!=' in value:
+        return True
+    if '?' in value and ':' in value:
+        return True
+    # Check for ! but not != (already handled above)
+    if '!' in value and '!=' not in value:
+        return True
+    # Check for arithmetic operators
+    # + and * are safe (not commonly in paths)
+    if '+' in value or '*' in value:
+        return True
+    # - is tricky because it's common in filenames/paths
+    # Only treat as operator if it appears between variable refs or numbers
+    # Pattern: $VAR-something or number-something where something starts with $ or digit
+    if '-' in value:
+        import re
+        # Look for patterns like $VAR-$OTHER or $VAR-123 or 123-$VAR
+        ref_escaped = re.escape(ref_char)
+        pattern = rf'({ref_escaped}[A-Za-z_][A-Za-z0-9_]*|\d+)-({ref_escaped}[A-Za-z_]|\d)'
+        if re.search(pattern, value):
+            return True
+    return False
+
+
 def resolve_var_references(env_dict: dict[str, str | None]) -> dict[str, str | None]:
     """
-    Resolve $VAR_NAME references in environment variables.
+    Resolve variable references and expressions in environment variables.
 
+    The reference character is configurable via ENVO_REF_CHAR (default: $).
+    
+    Supports:
+    - Simple references: $VAR
+    - Ternary: $VAR?true_value:false_value
+    - Negation: !$VAR
+    - Logical AND: $VAR&&$OTHER
+    - Logical OR: $VAR||$OTHER
+    - Equality: $VAR==$OTHER or $VAR==literal
+    - Inequality: $VAR!=$OTHER or $VAR!=literal
+    - Arithmetic: $A+$B, $A-$B, $A*$B
+    - Parentheses for grouping: ($VAR&&$OTHER)||$THIRD
+    
+    Note: Single | and / are NOT operators (to avoid conflicts with paths).
+    
     Performs multiple passes until no more substitutions are made,
     with a maximum iteration limit to prevent infinite loops.
     
@@ -272,10 +619,12 @@ def resolve_var_references(env_dict: dict[str, str | None]) -> dict[str, str | N
         env_dict: Dictionary of environment variables
 
     Returns:
-        Dictionary with variable references resolved
+        Dictionary with variable references and expressions resolved
     """
     import re
-    pattern = r'\$([A-Za-z_][A-Za-z0-9_]*)'
+    ref_char = consts.REF_CHAR
+    ref_char_escaped = re.escape(ref_char)
+    simple_pattern = rf'{ref_char_escaped}([A-Za-z_][A-Za-z0-9_]*)'
     result = env_dict.copy()
 
     for iteration in range(consts.VAR_REFERENCE_MAX_ITERATIONS):
@@ -284,7 +633,17 @@ def resolve_var_references(env_dict: dict[str, str | None]) -> dict[str, str | N
             # Skip None values
             if value is None:
                 continue
-            if '$' in value:
+            
+            # Skip values without any references
+            if ref_char not in value and '!' not in value:
+                continue
+            
+            # Check if this contains expression operators
+            if _has_expression_operators(value, ref_char):
+                # Evaluate the entire value as an expression
+                new_value = _evaluate_expression(value, result, ref_char)
+            else:
+                # Simple variable substitution only
                 def replace_var(match):
                     var_name = match.group(1)
                     # Don't reference self to avoid infinite loops
@@ -296,10 +655,11 @@ def resolve_var_references(env_dict: dict[str, str | None]) -> dict[str, str | N
                         return match.group(0)
                     return ref_val
 
-                new_value = re.sub(pattern, replace_var, value)
-                if new_value != value:
-                    result[key] = new_value
-                    changed = True
+                new_value = re.sub(simple_pattern, replace_var, value)
+            
+            if new_value != value:
+                result[key] = new_value
+                changed = True
 
         if not changed:
             # No more substitutions needed

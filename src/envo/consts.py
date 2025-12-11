@@ -91,7 +91,10 @@ _PARSING_DEFAULTS: dict[str, Any] = {
     # Project root substitution character
     "PROJECT_ROOT_CHAR": "%",
     
-    # Maximum iterations for resolving $VAR_NAME references
+    # Variable reference character (e.g., $VAR_NAME)
+    "REF_CHAR": "$",
+    
+    # Maximum iterations for resolving variable references
     "VAR_REFERENCE_MAX_ITERATIONS": 20,
 }
 
@@ -286,6 +289,7 @@ def __getattr__(name: str) -> Any:
         if env_key in os.environ:
             value = _coerce_config_value(name, os.environ[env_key])
             return value
+
         return _DEFAULTS[name]
     
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -1063,17 +1063,10 @@ def run_interactive_config(
         if not state['edit_mode']:
             # Save only changed variables to file
             if changes:
-                # Only include changed keys and keys already in file
+                # Only include changed keys
                 env_data = {}
-                for key in env:
-                    if key in changes:
-                        env_data[key] = changes[key]
-                    else:
-                        env_data[key] = env[key]
-                # Add any changed keys not already in file
                 for key in changes:
-                    if key not in env_data:
-                        env_data[key] = changes[key]
+                    env_data[key] = changes[key]
                 
                 try:
                     import os
@@ -1184,15 +1177,10 @@ def run_interactive_config(
         if response.lower() == 'y':
             # Only include changed keys and keys already in file
             env_data = {}
-            for key in env:
-                if key in changes:
-                    env_data[key] = changes[key]
-                else:
-                    env_data[key] = env[key]
-            # Add any changed keys not already in file
+            # Only save changed values
+            env_data = {}
             for key in changes:
-                if key not in env_data:
-                    env_data[key] = changes[key]
+                env_data[key] = changes[key]
             
             try:
                 save_env_file(env_data, dst_path, Path(spec_path) if spec_path else None)
