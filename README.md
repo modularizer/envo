@@ -1,6 +1,6 @@
 # envo
 
-**Environment variable loading utility with type coercion, validation, and interactive configuration.**
+**Environment variable loading utility.**
 
 `envo` provides a powerful, type-safe way to manage environment variables in Python projects. It automatically discovers `.env` files, coerces values to appropriate types, validates against specifications, and offers both programmatic and CLI interfaces.
 
@@ -18,6 +18,7 @@
 - **Multiple file formats** — Load from `.env`, `.json`, `.yaml`, and `.toml` files
 - **Variable grouping** — Auto-detected from `sample.env`, helps with grabbing chunks of env variables
 - **Customizable** — Override behavior with `ENVO_*` environment variables
+- **Supports .py env specs** - Allow using .py files to specify default values
 
 ## How to use?
 
