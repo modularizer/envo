@@ -586,51 +586,7 @@ def _evaluate_expression(expr: str, env_dict: dict[str, str | None], ref_char: s
         right_val = _evaluate_expression(right, env_dict, ref_char)
         return 'true' if left_val == right_val else 'false'
     
-    # 6. Addition and Subtraction (right-to-left for left associativity)
-    # Check subtraction first, but be careful not to match negative numbers
-    pos = _rfind_operator(expr, '-')
-    if pos > 0:  # Must be > 0 to not match unary minus at start
-        left = expr[:pos]
-        right = expr[pos + 1:]
-        left_val = _evaluate_expression(left, env_dict, ref_char)
-        right_val = _evaluate_expression(right, env_dict, ref_char)
-        left_num = _try_numeric(left_val)
-        right_num = _try_numeric(right_val)
-        if left_num is not None and right_num is not None:
-            result = left_num - right_num
-            return str(int(result)) if isinstance(result, float) and result.is_integer() else str(result)
-    
-    pos = _rfind_operator(expr, '+')
-    if pos >= 0:
-        left = expr[:pos]
-        right = expr[pos + 1:]
-        left_val = _evaluate_expression(left, env_dict, ref_char)
-        right_val = _evaluate_expression(right, env_dict, ref_char)
-        left_num = _try_numeric(left_val)
-        right_num = _try_numeric(right_val)
-        if left_num is not None and right_num is not None:
-            # Numeric addition
-            result = left_num + right_num
-            return str(int(result)) if isinstance(result, float) and result.is_integer() else str(result)
-        else:
-            # String concatenation
-            return left_val + right_val
-    
-    # 7. Multiplication (no division to avoid conflict with paths)
-    pos = _rfind_operator(expr, '*')
-    if pos >= 0:
-        left = expr[:pos]
-        right = expr[pos + 1:]
-        left_val = _evaluate_expression(left, env_dict, ref_char)
-        right_val = _evaluate_expression(right, env_dict, ref_char)
-        left_num = _try_numeric(left_val)
-        right_num = _try_numeric(right_val)
-        if left_num is not None and right_num is not None:
-            result = left_num * right_num
-            return str(int(result)) if isinstance(result, float) and result.is_integer() else str(result)
-        # If not both numeric, return concatenated (fallback behavior)
-        return left_val + right_val
-    
+
     # 8. NOT operator (prefix)
     if expr.startswith('!'):
         inner = expr[1:]
@@ -698,41 +654,27 @@ def _has_variable_reference(value: str, ref_char: str) -> bool:
 def _has_expression_operators(value: str, ref_char: str = None) -> bool:
     """
     Check if a value contains expression operators that need evaluation.
-    
+
     IMPORTANT: Only returns True if there's at least one variable reference.
     We don't evaluate pure literals like "1+2" or "true||false".
     """
     if ref_char is None:
         ref_char = consts.REF_CHAR
-    
+
     # First check: must have at least one variable reference
     if not _has_variable_reference(value, ref_char):
         return False
-    
+
     # These operators indicate an expression (not just simple $VAR substitution)
     # Note: we use || for OR to avoid conflict with | in paths
     # Note: no division operator to avoid conflict with / in paths
     if '||' in value or '&&' in value or '==' in value or '!=' in value:
         return True
-    if '?' in value and ':' in value:
+    if '?' in value and ':' in value.split('?', 1)[1]:
         return True
     # Check for ! but not != (already handled above)
     if '!' in value and '!=' not in value:
         return True
-    # Check for arithmetic operators
-    # + and * are safe (not commonly in paths)
-    if '+' in value or '*' in value:
-        return True
-    # - is tricky because it's common in filenames/paths
-    # Only treat as operator if it appears between variable refs or numbers
-    # Pattern: $VAR-something or number-something where something starts with $ or digit
-    if '-' in value:
-        import re
-        # Look for patterns like $VAR-$OTHER or $VAR-123 or 123-$VAR
-        ref_escaped = re.escape(ref_char)
-        pattern = rf'({ref_escaped}[A-Za-z_][A-Za-z0-9_]*|\d+)-({ref_escaped}[A-Za-z_]|\d)'
-        if re.search(pattern, value):
-            return True
     return False
 
 

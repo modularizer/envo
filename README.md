@@ -212,9 +212,6 @@ Envo supports logical and arithmetic expressions for dynamic configuration:
 | OR | `$A\|\|$B` | Logical OR | `true` or `false` |
 | Equals | `$A==$B` | Equality check | `true` or `false` |
 | Not Equals | `$A!=$B` | Inequality check | `true` or `false` |
-| Add | `$A+$B` | Addition (numbers) or concatenation (strings) | number or string |
-| Subtract | `$A-$B` | Subtraction | number |
-| Multiply | `$A*$B` | Multiplication | number |
 
 > **Note:** Single `|` and `/` are NOT operators to avoid conflicts with path separators.
 

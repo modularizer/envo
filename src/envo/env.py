@@ -169,6 +169,7 @@ class Env(dict):
         defaults: dict[str | re.Pattern, str] = None,
         export_to_environ: bool = True,
         export_extra_to_environ: bool = False,
+        ignore_extras: bool = True,
         _groups: tuple | None = None,
         **spec_extra,
     ):
@@ -327,6 +328,8 @@ class Env(dict):
             raw_dict = load_env_raw(*env_paths,
                                     existing_env_priority=existing_env_priority,
                                     cwd=cwd)
+        if ignore_extras:
+            raw_dict = {k: v for k, v in raw_dict.items() if k in self.spec}
         
         # Merge: spec_defaults (lowest) <- raw_dict (higher)
         merged = {**spec_defaults, **raw_dict}
