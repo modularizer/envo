@@ -167,12 +167,13 @@ def coerce_unknown(s: str | None, **kwargs):
             return coerce_int(s, **kwargs)
         if s.count('.') == 1 and s.replace('.', '').replace('-', '').replace("_","").isdigit():
             return coerce_float(s, **kwargs)
-        with contextlib.suppress(Exception):
-            if all(Path(p.strip()).expanduser().exists() for p in s.split("|") if p.strip()):
-                return coerce_path(s, **kwargs)
+        if not "://" in s:
+            with contextlib.suppress(Exception):
+                if all(Path(p.strip()).expanduser().exists() for p in s.split("|") if p.strip()):
+                    return coerce_path(s, **kwargs)
         if (s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]")):
             return json.loads(s, **kwargs)
-        if "/" in s:
+        if "/" in s and not "://" in s and (s.split("/")[0] in ['.', '~', ''] or Path(s.split("/")[0]).exists()):
             return coerce_path_str(s, **kwargs)
         return s
     except:
