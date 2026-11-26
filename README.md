@@ -51,9 +51,9 @@ debug = env.DEBUG          # bool
 port = env.PORT            # int
 db_url = env.DATABASE_URL  # str
 
-# Or use the pre-built global instance
-from envo import env
-print(env.DEBUG)
+# Loading is explicit; imports do not read configuration or modify os.environ.
+environment = Env(export_to_environ=False)
+print(environment.DEBUG)
 ```
 
 ### Using a Spec File

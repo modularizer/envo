@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "modularizer-envo"
-version = "0.2.0"
+version = "0.3.0"
 description = "Environment variable loading utility with project root detection"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -35,3 +35,6 @@ envo = "envo:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+
+[tool.setuptools.package-data]
+envo = ["py.typed"]

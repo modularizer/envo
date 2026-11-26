@@ -17,8 +17,11 @@ Configuration:
     See envo.consts for the complete list of configurable options.
 """
 
-from .env import env, Env, find_default_spec, find_default_env
-from .coerce import *
+from .env import Env as Env, find_default_spec, find_default_env
+from .coerce import (
+    coerce, coerce_bool, coerce_int, coerce_float, coerce_path,
+    coerce_path_str, coerce_glob, coerce_unknown,
+)
 from .parse_spec import (
     env_file_to_spec,
     env_file_to_defaults,

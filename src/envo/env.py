@@ -337,7 +337,7 @@ class Env(dict):
         # Resolve variable references (e.g., $VAR_NAME) in the merged dict
         merged = resolve_var_references(merged)
         
-        self.raw = apply_all_substitutions(merged)
+        self.raw: dict[str, str | None] = apply_all_substitutions(merged)
         self._parsed = {k: self[k] for k in self.keys()}
         super().__init__(self._parsed)
         
@@ -611,18 +611,6 @@ class Env(dict):
         return {g: self(g) for g in self.list_groups()}
 
 
-
-# Default Env instance for convenient access to environment variables.
-# Pre-configured with default settings:
-#   1. Auto-discovers spec from sample.env or .env.sample
-#   2. Loads spec defaults at lowest priority
-#   3. Loads .env if it exists
-#   4. Loads os.environ at highest priority
-#
-# Example:
-#     >>> from envo import env
-#     >>> env.DEBUG
-#     True
-#     >>> env.PORT
-#     8080
-env = Env()
+if __name__ == "__main__":
+    example_environment = Env(raw={"PORT": "8080"}, spec={"PORT": int}, export_to_environ=False)
+    print(example_environment["PORT"])
